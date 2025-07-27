@@ -7,6 +7,8 @@ import { EventCard } from '@/components/EventCard';
 import { Sidebar } from '@/components/Sidebar';
 import { Modal } from '@/components/Modal';
 import { useToast } from '@/hooks/use-toast';
+import { fetchCityData, WikidataEvent, OpenverseImage, MetArtifact } from '@/services/apiServices';
+import { EventCardSkeleton, LocationHeaderSkeleton, ImageGallerySkeleton, SidebarSkeleton } from '@/components/LoadingSkeleton';
 
 // Sample data - in a real app, this would come from APIs
 const sampleLocation = {
@@ -139,10 +141,50 @@ const Index = () => {
   const [isDark, setIsDark] = useState(true);
   const [showMenu, setShowMenu] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState<any>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [apiData, setApiData] = useState<any>(null);
+  const [currentCity, setCurrentCity] = useState("Imphal");
   const { toast } = useToast();
 
-  // Get current timeline data
+  // Get current timeline data - now using API data
   const getCurrentData = () => {
+    if (apiData && apiData.events && apiData.events.length > 0) {
+      // Group events by year and return data for current year
+      const eventsByYear: Record<number, any> = {};
+      
+      apiData.events.forEach((event: WikidataEvent) => {
+        const year = new Date(event.date).getFullYear();
+        if (!eventsByYear[year]) {
+          eventsByYear[year] = {
+            events: [],
+            weather: { icon: '🌤️', description: 'Historical Period', detail: `Climate data for ${year}` }
+          };
+        }
+        
+        eventsByYear[year].events.push({
+          id: `${year}-${eventsByYear[year].events.length}`,
+          title: event.label,
+          content: event.description,
+          type: event.type.toLowerCase().includes('war') || event.type.toLowerCase().includes('battle') ? 'military' : 
+                event.type.toLowerCase().includes('political') ? 'political' : 'cultural',
+          year: year,
+          layout: eventsByYear[year].events.length % 3 === 0 ? 'large' : 
+                 eventsByYear[year].events.length % 2 === 0 ? 'wide' : 'medium',
+          hasImage: true
+        });
+      });
+      
+      // Find closest year to current timeline position
+      const availableYears = Object.keys(eventsByYear).map(Number).sort((a, b) => a - b);
+      if (availableYears.length > 0) {
+        const closestYear = availableYears.reduce((prev, curr) => 
+          Math.abs(curr - currentYear) < Math.abs(prev - currentYear) ? curr : prev
+        );
+        return eventsByYear[closestYear];
+      }
+    }
+    
+    // Fallback to sample data
     const availableYears = Object.keys(timelineData).map(Number).sort((a, b) => a - b);
     const closestYear = availableYears.reduce((prev, curr) => 
       Math.abs(curr - currentYear) < Math.abs(prev - currentYear) ? curr : prev
@@ -161,13 +203,65 @@ const Index = () => {
     }
   }, [isDark]);
 
-  const handleSearch = (query: string) => {
+  // Load initial city data on mount
+  useEffect(() => {
+    loadCityData(currentCity);
+  }, []);
+
+  // Load city data from APIs
+  const loadCityData = async (city: string) => {
+    setIsLoading(true);
+    setCurrentCity(city);
+    
+    try {
+      const data = await fetchCityData(city);
+      setApiData(data);
+      
+      // Update location info with real data
+      if (data.wikipedia || data.geoNames) {
+        const newLocation = {
+          name: data.wikipedia?.title || data.geoNames?.name || city,
+          subtitle: data.geoNames?.fclName || "Historic Location",
+          description: data.wikipedia?.extract || `Exploring the historical and cultural heritage of ${city}.`,
+          coordinates: data.geoNames ? `${parseFloat(data.geoNames.lat).toFixed(1)}°N, ${parseFloat(data.geoNames.lng).toFixed(1)}°E` : "",
+          elevation: "",
+          weather: {
+            temperature: "Loading...",
+            condition: "Checking conditions"
+          },
+          localTime: new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour12: false })
+        };
+        
+        // Store the new location data
+        setApiData(prevData => ({ ...prevData, location: newLocation }));
+      }
+      
+      toast({
+        title: "Data loaded successfully",
+        description: `Found ${data.events.length} historical events, ${data.images.length} images, and ${data.artifacts.length} artifacts.`,
+      });
+    } catch (error) {
+      console.error('Error loading city data:', error);
+      toast({
+        title: "Data loading failed",
+        description: "Using fallback data. Some features may be limited.",
+        variant: "destructive"
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleSearch = async (query: string) => {
+    setSearchValue(query);
+    const cityName = query.split(',')[0].trim(); // Extract city name from "City, State/Country"
+    
     toast({
       title: `Searching for: ${query}`,
       description: "Loading historical data from multiple sources...",
     });
-    // In a real app, this would trigger API calls
-    console.log('Searching for:', query);
+    
+    await loadCityData(cityName);
   };
 
   const handleTTS = (text: string) => {
@@ -207,38 +301,147 @@ const Index = () => {
             {/* Timeline Area */}
             <div className="lg:col-span-3 space-y-8">
               {/* Location Header */}
-              <LocationHeader 
-                location={sampleLocation}
-                onTextToSpeech={handleTTS}
-              />
+              {isLoading ? (
+                <LocationHeaderSkeleton />
+              ) : (
+                <LocationHeader 
+                  location={apiData?.location || sampleLocation}
+                  onTextToSpeech={handleTTS}
+                />
+              )}
 
               {/* Timeline Scroller */}
               <TimelineScroller
                 currentYear={currentYear}
                 onYearChange={setCurrentYear}
-                keyMoments={keyMoments}
+                keyMoments={apiData?.events ? apiData.events.slice(0, 4).map((event: WikidataEvent, index: number) => ({
+                  year: new Date(event.date).getFullYear(),
+                  title: event.label,
+                  description: event.description?.substring(0, 50) + '...' || 'Historical Event'
+                })) : keyMoments}
               />
 
               {/* Events Grid */}
-              <motion.div 
-                key={currentYear} // Re-animate when year changes
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ duration: 0.6 }}
-                className="grid md:grid-cols-2 xl:grid-cols-3 gap-6"
-              >
-                {currentData.events.map((event: any, index: number) => (
-                  <EventCard
-                    key={event.id}
-                    event={event}
-                    index={index}
-                    onClick={() => handleEventClick(event)}
-                  />
-                ))}
-              </motion.div>
+              {isLoading ? (
+                <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-6">
+                  {Array.from({ length: 6 }).map((_, i) => (
+                    <EventCardSkeleton key={i} />
+                  ))}
+                </div>
+              ) : (
+                <motion.div 
+                  key={currentYear} // Re-animate when year changes
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ duration: 0.6 }}
+                  className="grid md:grid-cols-2 xl:grid-cols-3 gap-6"
+                >
+                  {currentData.events.map((event: any, index: number) => (
+                    <EventCard
+                      key={event.id}
+                      event={event}
+                      index={index}
+                      onClick={() => handleEventClick(event)}
+                    />
+                  ))}
+                </motion.div>
+              )}
+
+              {/* Image Gallery from Openverse */}
+              {apiData?.images && apiData.images.length > 0 && (
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.6, delay: 0.3 }}
+                  className="space-y-4"
+                >
+                  <h3 className="text-xl font-serif text-foreground">Historical Images</h3>
+                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                    {apiData.images.slice(0, 8).map((image: OpenverseImage, index: number) => (
+                      <motion.div
+                        key={image.id}
+                        initial={{ opacity: 0, scale: 0.9 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        transition={{ duration: 0.4, delay: index * 0.1 }}
+                        className="group cursor-pointer"
+                        onClick={() => setSelectedEvent({
+                          title: image.title || 'Historical Image',
+                          content: `This image is from ${image.source}. Created by: ${image.creator}. License: ${image.license}`,
+                          type: 'image',
+                          imageUrl: image.url
+                        })}
+                      >
+                        <div className="relative overflow-hidden rounded-lg border border-border bg-card">
+                          <img
+                            src={image.thumbnail || image.url}
+                            alt={image.title || 'Historical image'}
+                            className="w-full h-32 object-cover transition-transform group-hover:scale-110"
+                            loading="lazy"
+                          />
+                          <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                            <span className="text-white text-sm font-medium">View Details</span>
+                          </div>
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-2 truncate">
+                          {image.title || 'Historical Image'}
+                        </p>
+                      </motion.div>
+                    ))}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Images sourced from Openverse under Creative Commons licenses
+                  </p>
+                </motion.div>
+              )}
+
+              {/* Met Museum Artifacts */}
+              {apiData?.artifacts && apiData.artifacts.length > 0 && (
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.6, delay: 0.5 }}
+                  className="space-y-4"
+                >
+                  <h3 className="text-xl font-serif text-foreground">Cultural Artifacts</h3>
+                  <div className="grid md:grid-cols-2 gap-6">
+                    {apiData.artifacts.map((artifact: MetArtifact, index: number) => (
+                      <motion.div
+                        key={artifact.objectID}
+                        initial={{ opacity: 0, x: -20 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ duration: 0.4, delay: index * 0.2 }}
+                        className="bg-card border border-border rounded-lg p-4 cursor-pointer hover:shadow-lg transition-shadow"
+                        onClick={() => setSelectedEvent({
+                          title: artifact.title,
+                          content: `Culture: ${artifact.culture}\nDynasty: ${artifact.dynasty}\nDate: ${artifact.objectDate}\n\nThis artifact is part of the Metropolitan Museum of Art's public domain collection.`,
+                          type: 'artifact',
+                          imageUrl: artifact.primaryImage
+                        })}
+                      >
+                        {artifact.primaryImageSmall && (
+                          <img
+                            src={artifact.primaryImageSmall}
+                            alt={artifact.title}
+                            className="w-full h-32 object-cover rounded mb-3"
+                            loading="lazy"
+                          />
+                        )}
+                        <h4 className="font-semibold text-foreground mb-2">{artifact.title}</h4>
+                        <div className="text-sm text-muted-foreground space-y-1">
+                          <p>Culture: {artifact.culture}</p>
+                          <p>Date: {artifact.objectDate}</p>
+                        </div>
+                      </motion.div>
+                    ))}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Artifacts from The Metropolitan Museum of Art, CC0 Public Domain
+                  </p>
+                </motion.div>
+              )}
 
               {/* Loading state for new content */}
-              {currentData.events.length === 0 && (
+              {!isLoading && currentData.events.length === 0 && (
                 <motion.div 
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
@@ -249,7 +452,7 @@ const Index = () => {
                     Exploring {currentYear}...
                   </h3>
                   <p className="text-muted-foreground">
-                    Loading historical events for this time period
+                    No historical events found for this time period. Try a different year or location.
                   </p>
                 </motion.div>
               )}
@@ -258,13 +461,21 @@ const Index = () => {
             {/* Sidebar */}
             <div className="lg:col-span-1">
               <div className="sticky top-24">
-                <Sidebar
-                  currentYear={currentYear}
-                  onYearJump={setCurrentYear}
-                  keyMoments={keyMoments}
-                  weather={currentData.weather}
-                  location="Imphal Valley"
-                />
+                {isLoading ? (
+                  <SidebarSkeleton />
+                ) : (
+                  <Sidebar
+                    currentYear={currentYear}
+                    onYearJump={setCurrentYear}
+                    keyMoments={apiData?.events ? apiData.events.slice(0, 4).map((event: WikidataEvent) => ({
+                      year: new Date(event.date).getFullYear(),
+                      title: event.label,
+                      description: event.description?.substring(0, 50) + '...' || 'Historical Event'
+                    })) : keyMoments}
+                    weather={currentData.weather}
+                    location={apiData?.geoNames?.name || currentCity}
+                  />
+                )}
               </div>
             </div>
           </div>
@@ -276,7 +487,7 @@ const Index = () => {
         isOpen={!!selectedEvent}
         onClose={() => setSelectedEvent(null)}
         title={selectedEvent?.title || ''}
-        content={selectedEvent ? `${selectedEvent.content}\n\nThis ${selectedEvent.type} event was significant in shaping the history of the region. The impact can still be felt today in the cultural and social fabric of Imphal.` : ''}
+        content={selectedEvent ? (selectedEvent.imageUrl ? `${selectedEvent.content}\n\n[Image: ${selectedEvent.imageUrl}]` : `${selectedEvent.content}\n\nThis ${selectedEvent.type} provides valuable insight into the historical and cultural heritage of the region.`) : ''}
         category={selectedEvent?.type}
         sources={['Historical Archives', 'Academic Research', 'Wikimedia Commons']}
       />
