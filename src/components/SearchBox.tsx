@@ -1,6 +1,7 @@
-import { motion } from 'framer-motion';
-import { Search, MapPin, Clock } from 'lucide-react';
-import { useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Search, MapPin, Clock, X } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { fetchGeoNamesSuggestions, GeoNamesSuggestion } from '@/services/apiServices';
 
 interface SearchBoxProps {
   value: string;

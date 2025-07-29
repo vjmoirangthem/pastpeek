@@ -144,6 +144,8 @@ const Index = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [apiData, setApiData] = useState<any>(null);
   const [currentCity, setCurrentCity] = useState("Imphal");
+  const [yearRange, setYearRange] = useState<{start: number, end: number} | undefined>();
+  const [currentSpeech, setCurrentSpeech] = useState<SpeechSynthesisUtterance | null>(null);
   const { toast } = useToast();
 
   // Get current timeline data - now using API data
@@ -209,7 +211,7 @@ const Index = () => {
   }, []);
 
   // Load city data from APIs
-  const loadCityData = async (city: string) => {
+  const loadCityData = async (city: string, startYear?: number, endYear?: number) => {
     setIsLoading(true);
     setCurrentCity(city);
     
@@ -265,17 +267,29 @@ const Index = () => {
   };
 
   const handleTTS = (text: string) => {
-    if ('speechSynthesis' in window) {
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.rate = 0.8;
-      speechSynthesis.speak(utterance);
-    } else {
+    if (!('speechSynthesis' in window)) {
       toast({
         title: "Text-to-speech not supported",
         description: "Your browser doesn't support text-to-speech functionality.",
         variant: "destructive"
       });
+      return;
     }
+
+    // Stop current speech if playing
+    if (currentSpeech) {
+      speechSynthesis.cancel();
+      setCurrentSpeech(null);
+      return;
+    }
+
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.rate = 0.8;
+    utterance.onend = () => setCurrentSpeech(null);
+    utterance.onerror = () => setCurrentSpeech(null);
+    
+    setCurrentSpeech(utterance);
+    speechSynthesis.speak(utterance);
   };
 
   const handleEventClick = (event: any) => {
@@ -297,9 +311,9 @@ const Index = () => {
       {/* Main Content */}
       <main className="pt-24 pb-12">
         <div className="container mx-auto px-4">
-          <div className="grid lg:grid-cols-4 gap-8">
+          <div className="grid lg:grid-cols-4 gap-4 lg:gap-8">
             {/* Timeline Area */}
-            <div className="lg:col-span-3 space-y-8">
+            <div className="lg:col-span-3 space-y-4 lg:space-y-8 order-2 lg:order-1">
               {/* Location Header */}
               {isLoading ? (
                 <LocationHeaderSkeleton />
@@ -314,11 +328,19 @@ const Index = () => {
               <TimelineScroller
                 currentYear={currentYear}
                 onYearChange={setCurrentYear}
-                keyMoments={apiData?.events ? apiData.events.slice(0, 4).map((event: WikidataEvent, index: number) => ({
-                  year: new Date(event.date).getFullYear(),
-                  title: event.label,
-                  description: event.description?.substring(0, 50) + '...' || 'Historical Event'
-                })) : keyMoments}
+                onYearRangeChange={(start, end) => {
+                  setYearRange({start, end});
+                  loadCityData(currentCity, start, end);
+                }}
+                yearRange={yearRange}
+                keyMoments={apiData?.events ? [...new Set(apiData.events.map((event: any) => event.year))].slice(0, 4).map(year => {
+                  const event = apiData.events.find((e: any) => e.year === year);
+                  return {
+                    year,
+                    title: event?.title || event?.label || 'Historical Event',
+                    description: (event?.description || event?.content || '').substring(0, 50) + '...'
+                  };
+                }) : keyMoments}
               />
 
               {/* Events Grid */}
@@ -459,7 +481,7 @@ const Index = () => {
             </div>
 
             {/* Sidebar */}
-            <div className="lg:col-span-1">
+            <div className="lg:col-span-1 order-1 lg:order-2">
               <div className="sticky top-24">
                 {isLoading ? (
                   <SidebarSkeleton />
