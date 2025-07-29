@@ -214,37 +214,37 @@ export async function fetchOpenverseImages(city: string, timePeriod?: string, li
     const searchQuery = timePeriod ? `${city} ${timePeriod}` : city;
     const encodedQuery = encodeURIComponent(searchQuery);
     
-    // Try multiple sources for better coverage
-    const sources = ['wikimedia', 'flickr', 'smithsonian'];
-    let allImages: OpenverseImage[] = [];
+    // Use working Openverse endpoint
+    const response = await fetch(
+      `https://api.openverse.engineering/v1/images?q=${encodedQuery}&license=cc0,by&page_size=${limit * 2}`
+    );
     
-    for (const source of sources) {
-      try {
-        const response = await fetch(
-          `https://api.openverse.engineering/v1/images/?q=${encodedQuery}&license=cc0,by&source=${source}&page_size=${Math.ceil(limit/sources.length)}`
-        );
-        
-        if (response.ok) {
-          const data = await response.json();
-          if (data.results) {
-            allImages = [...allImages, ...data.results];
-          }
-        }
-      } catch (sourceError) {
-        console.warn(`Error fetching from ${source}:`, sourceError);
-      }
-      
-      if (allImages.length >= limit) break;
+    if (!response.ok) {
+      throw new Error(`Openverse API error: ${response.status}`);
     }
     
-    // Remove duplicates and limit results
-    const uniqueImages = allImages
-      .filter((img, index, arr) => 
-        arr.findIndex(item => item.id === img.id || item.url === img.url) === index
-      )
-      .slice(0, limit);
+    const data = await response.json();
     
-    return uniqueImages;
+    if (!data.results || !Array.isArray(data.results)) {
+      return [];
+    }
+    
+    // Filter and format results
+    const images = data.results
+      .filter((img: any) => img.url && img.thumbnail)
+      .slice(0, limit)
+      .map((img: any) => ({
+        id: img.id || Math.random().toString(),
+        title: img.title || `${city} Historical Image`,
+        url: img.url,
+        thumbnail: img.thumbnail || img.url,
+        creator: img.creator || 'Unknown',
+        license: img.license || 'cc0',
+        license_url: img.license_url || '',
+        source: img.source || 'openverse'
+      }));
+    
+    return images;
   } catch (error) {
     console.error('Error fetching Openverse images:', error);
     return [];

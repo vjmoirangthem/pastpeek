@@ -5,6 +5,7 @@ import { LocationHeader } from '@/components/LocationHeader';
 import { TimelineScroller } from '@/components/TimelineScroller';
 import { EventCard } from '@/components/EventCard';
 import { Sidebar } from '@/components/Sidebar';
+import { RightSidebar } from '@/components/RightSidebar';
 import { Modal } from '@/components/Modal';
 import { useToast } from '@/hooks/use-toast';
 import { fetchCityData, WikidataEvent, OpenverseImage, MetArtifact } from '@/services/apiServices';
@@ -491,7 +492,7 @@ const Index = () => {
                 {isLoading ? (
                   <SidebarSkeleton />
                 ) : (
-                  <Sidebar
+                  <RightSidebar
                     currentYear={currentYear}
                     onYearJump={setCurrentYear}
                     keyMoments={apiData?.events ? apiData.events.slice(0, 4).map((event: WikidataEvent) => ({
