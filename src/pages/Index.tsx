@@ -333,14 +333,19 @@ const Index = () => {
                   loadCityData(currentCity, start, end);
                 }}
                 yearRange={yearRange}
-                keyMoments={apiData?.events ? [...new Set(apiData.events.map((event: any) => event.year))].slice(0, 4).map(year => {
-                  const event = apiData.events.find((e: any) => e.year === year);
-                  return {
-                    year,
-                    title: event?.title || event?.label || 'Historical Event',
-                    description: (event?.description || event?.content || '').substring(0, 50) + '...'
-                  };
-                }) : keyMoments}
+                keyMoments={apiData?.events ? apiData.events
+                  .filter((event: any) => event.year && typeof event.year === 'number')
+                  .reduce((unique: any[], event: any) => {
+                    if (!unique.find(e => e.year === event.year)) {
+                      unique.push({
+                        year: Number(event.year),
+                        title: String(event.title || event.label || 'Historical Event'),
+                        description: String((event.description || event.content || 'Historical Event').substring(0, 50) + '...')
+                      });
+                    }
+                    return unique;
+                  }, [])
+                  .slice(0, 4) : keyMoments}
               />
 
               {/* Events Grid */}
