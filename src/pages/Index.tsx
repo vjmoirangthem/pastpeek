@@ -12,133 +12,24 @@ import { useToast } from '@/hooks/use-toast';
 import { fetchCityData, WikidataEvent, OpenverseImage, MetArtifact, fetchHistoricalWeather } from '@/services/apiServices';
 import { EventCardSkeleton, LocationHeaderSkeleton, ImageGallerySkeleton, SidebarSkeleton } from '@/components/LoadingSkeleton';
 
-// Sample data - in a real app, this would come from APIs
-const sampleLocation = {
+// Fallback data only used when API fails
+const fallbackLocation = {
   name: "Imphal",
   subtitle: "The Jewel City of Manipur",
-  description: "Imphal, the capital city of Manipur, is nestled in the heart of the Manipur Valley. Known as the \"Jewel of India,\" this ancient city has been a cultural and political center for over 2,000 years. Rich in history, tradition, and natural beauty, Imphal stands as a testament to the resilience and cultural heritage of the Meitei people.",
+  description: "Historical data unavailable. Please check your connection.",
   coordinates: "24.8°N, 93.9°E",
   elevation: "786m",
   weather: {
-    temperature: "26°C",
-    condition: "Partly Cloudy"
+    temperature: "N/A",
+    condition: "Data unavailable"
   },
   localTime: new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour12: false })
 };
 
-const keyMoments = [
-  { year: 1850, title: "British Colonial Period", description: "British influence begins" },
-  { year: 1891, title: "Anglo-Manipur War", description: "Major conflict with British forces" },
-  { year: 1944, title: "Battle of Imphal", description: "WWII turning point in Asia" },
-  { year: 1972, title: "Manipur becomes State", description: "Gains full statehood" }
-];
-
-const timelineData: Record<number, any> = {
-  1850: {
-    events: [
-      {
-        id: '1850-1',
-        title: 'British Colonial Influence',
-        content: 'The British East India Company begins to exert influence over Manipur, though the kingdom maintains relative autonomy. This period marks the beginning of significant political changes in the region.',
-        type: 'political' as const,
-        year: 1850,
-        layout: 'large' as const,
-        hasImage: true
-      },
-      {
-        id: '1850-2',
-        title: 'Trade Routes Flourish',
-        content: 'Imphal serves as an important trading hub connecting India and Southeast Asia. Merchants from various regions converge here, bringing diverse cultures and goods.',
-        type: 'economic' as const,
-        year: 1850,
-        layout: 'wide' as const,
-        hasImage: true
-      },
-      {
-        id: '1850-3',
-        title: 'Kangla Palace Complex',
-        content: 'The historic Kangla Palace remains the seat of power, showcasing traditional Manipuri architecture and serving as the cultural heart of the kingdom.',
-        type: 'cultural' as const,
-        year: 1850,
-        layout: 'medium' as const,
-        hasImage: true
-      }
-    ],
-    weather: { icon: '🌧️', description: 'Monsoon Season', detail: 'Heavy rainfall typical for the region' }
-  },
-  1891: {
-    events: [
-      {
-        id: '1891-1',
-        title: 'Anglo-Manipur War',
-        content: 'A significant conflict between the British and Manipur kingdom that resulted in the exile of the royal family and marked the end of Manipur\'s independence.',
-        type: 'military' as const,
-        year: 1891,
-        layout: 'large' as const,
-        hasImage: true
-      },
-      {
-        id: '1891-2',
-        title: 'End of Sovereignty',
-        content: 'Manipur loses its independent status and comes under direct British rule, fundamentally changing the political landscape of the region.',
-        type: 'political' as const,
-        year: 1891,
-        layout: 'medium' as const,
-        hasImage: true
-      }
-    ],
-    weather: { icon: '⛈️', description: 'Stormy Period', detail: 'Turbulent times both politically and climatically' }
-  },
-  1944: {
-    events: [
-      {
-        id: '1944-1',
-        title: 'Battle of Imphal',
-        content: 'One of the most significant battles of World War II in Southeast Asia. The successful defense of Imphal marked a turning point in the war against Japanese forces.',
-        type: 'military' as const,
-        year: 1944,
-        layout: 'large' as const,
-        hasImage: true
-      },
-      {
-        id: '1944-2',
-        title: 'Strategic Air Operations',
-        content: 'Imphal becomes a crucial strategic location with massive military operations. The airfield plays a vital role in the Allied victory.',
-        type: 'international' as const,
-        year: 1944,
-        layout: 'wide' as const,
-        hasImage: true
-      }
-    ],
-    weather: { icon: '☀️', description: 'Dry Season', detail: 'Clear weather conditions during major military operations' }
-  },
-  1972: {
-    events: [
-      {
-        id: '1972-1',
-        title: 'Statehood Achievement',
-        content: 'Manipur becomes a full state of India, gaining greater political autonomy and representation in the national government.',
-        type: 'political' as const,
-        year: 1972,
-        layout: 'large' as const,
-        hasImage: true
-      },
-      {
-        id: '1972-2',
-        title: 'Infrastructure Modernization',
-        content: 'Significant development in infrastructure, education, and healthcare systems begins, marking the start of modern Manipur.',
-        type: 'development' as const,
-        year: 1972,
-        layout: 'wide' as const,
-        hasImage: true
-      }
-    ],
-    weather: { icon: '🌞', description: 'Clear Skies Ahead', detail: 'Optimistic climate reflecting bright political future' }
-  }
-};
+// Removed dummy timeline data - now using only API data
 
 const Index = () => {
-  const [currentYear, setCurrentYear] = useState(1850);
+  const [currentYear, setCurrentYear] = useState(2025);
   const [searchValue, setSearchValue] = useState("Imphal, Manipur");
   const [isDark, setIsDark] = useState(true);
   const [showMenu, setShowMenu] = useState(false);
@@ -153,27 +44,27 @@ const Index = () => {
   const [currentWeather, setCurrentWeather] = useState<any>(null);
   const { toast } = useToast();
 
-  // Get current timeline data - now using API data
+  // Get current timeline data - now using only API data
   const getCurrentData = () => {
     if (apiData && apiData.events && apiData.events.length > 0) {
       // Group events by year and return data for current year
       const eventsByYear: Record<number, any> = {};
       
       apiData.events.forEach((event: WikidataEvent) => {
-        const year = new Date(event.date).getFullYear();
+        const year = event.year || new Date(event.date).getFullYear();
         if (!eventsByYear[year]) {
           eventsByYear[year] = {
             events: [],
-            weather: { icon: '🌤️', description: 'Historical Period', detail: `Climate data for ${year}` }
+            weather: currentWeather || { icon: '🌤️', description: 'Historical Period', detail: `Climate data for ${year}` }
           };
         }
         
         eventsByYear[year].events.push({
-          id: `${year}-${eventsByYear[year].events.length}`,
-          title: event.label,
-          content: event.description,
-          type: event.type.toLowerCase().includes('war') || event.type.toLowerCase().includes('battle') ? 'military' : 
-                event.type.toLowerCase().includes('political') ? 'political' : 'cultural',
+          id: event.id || `${year}-${eventsByYear[year].events.length}`,
+          title: event.label || 'Historical Event',
+          content: event.description || 'A significant historical event.',
+          type: event.type?.toLowerCase().includes('war') || event.type?.toLowerCase().includes('battle') ? 'military' : 
+                event.type?.toLowerCase().includes('political') ? 'political' : 'cultural',
           year: year,
           layout: eventsByYear[year].events.length % 3 === 0 ? 'large' : 
                  eventsByYear[year].events.length % 2 === 0 ? 'wide' : 'medium',
@@ -187,16 +78,37 @@ const Index = () => {
         const closestYear = availableYears.reduce((prev, curr) => 
           Math.abs(curr - currentYear) < Math.abs(prev - currentYear) ? curr : prev
         );
+        
+        // Update weather in the data
+        if (eventsByYear[closestYear] && currentWeather) {
+          eventsByYear[closestYear].weather = {
+            icon: currentWeather.icon,
+            description: currentWeather.condition,
+            detail: `${currentWeather.temperature}°C, ${currentWeather.condition}`,
+            temperature: currentWeather.temperature,
+            maxTemp: currentWeather.maxTemp,
+            minTemp: currentWeather.minTemp,
+            precipitation: currentWeather.precipitation
+          };
+        }
+        
         return eventsByYear[closestYear];
       }
     }
     
-    // Fallback to sample data
-    const availableYears = Object.keys(timelineData).map(Number).sort((a, b) => a - b);
-    const closestYear = availableYears.reduce((prev, curr) => 
-      Math.abs(curr - currentYear) < Math.abs(prev - currentYear) ? curr : prev
-    );
-    return timelineData[closestYear] || timelineData[1850];
+    // Return minimal fallback data when no API data available
+    return {
+      events: [{
+        id: 'fallback-1',
+        title: 'No Historical Data Available',
+        content: 'Please check your internet connection or try searching for a different location.',
+        type: 'info',
+        year: currentYear,
+        layout: 'large',
+        hasImage: false
+      }],
+      weather: { icon: '❓', description: 'No Data', detail: 'Weather data unavailable' }
+    };
   };
 
   const currentData = getCurrentData();
@@ -390,8 +302,9 @@ const Index = () => {
                 <LocationHeaderSkeleton />
               ) : (
                 <LocationHeader 
-                  location={apiData?.location || sampleLocation}
+                  location={apiData?.location || fallbackLocation}
                   onTextToSpeech={handleTTS}
+                  weather={currentWeather}
                 />
               )}
 
@@ -400,7 +313,7 @@ const Index = () => {
                 currentYear={currentYear}
                 onYearChange={setCurrentYear}
                 keyMoments={apiData?.events ? apiData.events
-                  .filter((event: any) => event.year && typeof event.year === 'number')
+                  .filter((event: any) => event.year && typeof event.year === 'number' && !isNaN(event.year))
                   .reduce((unique: any[], event: any) => {
                     if (!unique.find(e => e.year === event.year)) {
                       unique.push({
@@ -411,7 +324,8 @@ const Index = () => {
                     }
                     return unique;
                   }, [])
-                  .slice(0, 4) : keyMoments}
+                  .sort((a, b) => a.year - b.year)
+                  .slice(0, 6) : []}
               />
 
               {/* Events Grid */}
@@ -564,7 +478,7 @@ const Index = () => {
                       year: new Date(event.date).getFullYear(),
                       title: event.label,
                       description: event.description?.substring(0, 50) + '...' || 'Historical Event'
-                    })) : keyMoments}
+                    })) : []}
                     weather={currentWeather || currentData.weather}
                     location={apiData?.geoNames?.name || currentCity}
                   />

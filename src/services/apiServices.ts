@@ -1,3 +1,5 @@
+import { cacheService, CACHE_KEYS, CACHE_TTL } from './cacheService';
+
 const GEONAMES_USERNAME = 'vjmoirangthem';
 
 // Interfaces
@@ -98,87 +100,102 @@ export interface MetArtifact {
   primaryImageSmall: string;
 }
 
-// Wikipedia REST API - Summary
+// Wikipedia REST API - Summary with caching
 export async function fetchWikipediaSummary(city: string): Promise<WikipediaSummary | null> {
-  try {
-    const encodedCity = encodeURIComponent(city.replace(/\s+/g, '_'));
-    const response = await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodedCity}`);
-    
-    if (!response.ok) {
-      throw new Error(`Wikipedia API error: ${response.status}`);
-    }
-    
-    const data = await response.json();
-    
-    return {
-      title: data.title,
-      extract: data.extract,
-      thumbnail: data.thumbnail,
-      coordinates: data.coordinates
-    };
-  } catch (error) {
+  return cacheService.getOrFetch(
+    CACHE_KEYS.WIKIPEDIA_SUMMARY,
+    async () => {
+      const encodedCity = encodeURIComponent(city.replace(/\s+/g, '_'));
+      const response = await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodedCity}`);
+      
+      if (!response.ok) {
+        throw new Error(`Wikipedia API error: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      
+      return {
+        title: data.title,
+        extract: data.extract,
+        thumbnail: data.thumbnail,
+        coordinates: data.coordinates
+      };
+    },
+    { city },
+    CACHE_TTL.LONG
+  ).catch(error => {
     console.error('Error fetching Wikipedia summary:', error);
     return null;
-  }
+  });
 }
 
-// Wikipedia Full Content with REGEX parsing
+// Wikipedia Full Content with REGEX parsing and caching
 export async function fetchWikipediaFullContent(city: string): Promise<WikipediaFullContent | null> {
-  try {
-    const encodedCity = encodeURIComponent(city.replace(/\s+/g, '_'));
-    const response = await fetch(`https://en.wikipedia.org/w/api.php?action=parse&page=${encodedCity}&format=json&origin=*`);
-    
-    if (!response.ok) {
-      throw new Error(`Wikipedia Parse API error: ${response.status}`);
-    }
-    
-    const data = await response.json();
-    
-    if (data.error) {
-      return null;
-    }
-    
-    const html = data.parse.text['*'];
-    const sections = parseWikipediaSections(html);
-    const images = extractImages(html);
-    const categories = data.parse.categories?.map((cat: any) => cat['*']) || [];
-    
-    return {
-      title: data.parse.title,
-      content: stripHtml(html),
-      sections,
-      images,
-      categories
-    };
-  } catch (error) {
+  return cacheService.getOrFetch(
+    CACHE_KEYS.WIKIPEDIA_FULL,
+    async () => {
+      const encodedCity = encodeURIComponent(city.replace(/\s+/g, '_'));
+      const response = await fetch(`https://en.wikipedia.org/w/api.php?action=parse&page=${encodedCity}&format=json&origin=*`);
+      
+      if (!response.ok) {
+        throw new Error(`Wikipedia Parse API error: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      
+      if (data.error) {
+        throw new Error(`Wikipedia page not found: ${city}`);
+      }
+      
+      const html = data.parse.text['*'];
+      const sections = parseWikipediaSections(html);
+      const images = extractImages(html);
+      const categories = data.parse.categories?.map((cat: any) => cat['*']) || [];
+      
+      return {
+        title: data.parse.title,
+        content: stripHtml(html),
+        sections,
+        images,
+        categories
+      };
+    },
+    { city },
+    CACHE_TTL.LONG
+  ).catch(error => {
     console.error('Error fetching Wikipedia full content:', error);
     return null;
-  }
+  });
 }
 
-// GeoNames API - Single Location
+// GeoNames API - Single Location with caching
 export async function fetchGeoNamesData(city: string): Promise<GeoNamesResult | null> {
-  try {
-    const encodedCity = encodeURIComponent(city);
-    const response = await fetch(
-      `https://secure.geonames.org/searchJSON?q=${encodedCity}&maxRows=1&username=${GEONAMES_USERNAME}`
-    );
-    
-    if (!response.ok) {
-      throw new Error(`GeoNames API error: ${response.status}`);
-    }
-    
-    const data = await response.json();
-    
-    if (data.geonames && data.geonames.length > 0) {
-      return { ...data.geonames[0], geonameId: data.geonames[0].geonameId };
-    }
-    
-    return null;
-  } catch (error) {
+  return cacheService.getOrFetch(
+    CACHE_KEYS.GEONAMES,
+    async () => {
+      const encodedCity = encodeURIComponent(city);
+      const response = await fetch(
+        `https://secure.geonames.org/searchJSON?q=${encodedCity}&maxRows=1&username=${GEONAMES_USERNAME}`
+      );
+      
+      if (!response.ok) {
+        throw new Error(`GeoNames API error: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      
+      if (data.geonames && data.geonames.length > 0) {
+        return { ...data.geonames[0], geonameId: data.geonames[0].geonameId };
+      }
+      
+      throw new Error(`Location not found: ${city}`);
+    },
+    { city },
+    CACHE_TTL.VERY_LONG
+  ).catch(error => {
     console.error('Error fetching GeoNames data:', error);
     return null;
-  }
+  });
 }
 
 // GeoNames API - Auto-suggestions
@@ -208,45 +225,31 @@ export async function fetchGeoNamesSuggestions(query: string): Promise<GeoNamesS
   }
 }
 
-// Openverse API for CC images with time period filtering
-export async function fetchOpenverseImages(city: string, timePeriod?: string, limit: number = 8): Promise<OpenverseImage[]> {
+// Wikipedia Images - Extract from Wikipedia content
+export async function fetchWikipediaImages(city: string, limit: number = 8): Promise<OpenverseImage[]> {
   try {
-    const searchQuery = timePeriod ? `${city} ${timePeriod}` : city;
-    const encodedQuery = encodeURIComponent(searchQuery);
-    
-    // Use working Openverse endpoint
-    const response = await fetch(
-      `https://api.openverse.engineering/v1/images?q=${encodedQuery}&license=cc0,by&page_size=${limit * 2}`
-    );
-    
-    if (!response.ok) {
-      throw new Error(`Openverse API error: ${response.status}`);
-    }
-    
-    const data = await response.json();
-    
-    if (!data.results || !Array.isArray(data.results)) {
+    const fullContent = await fetchWikipediaFullContent(city);
+    if (!fullContent || !fullContent.images) {
       return [];
     }
-    
-    // Filter and format results
-    const images = data.results
-      .filter((img: any) => img.url && img.thumbnail)
+
+    // Convert Wikipedia images to OpenverseImage format
+    const images: OpenverseImage[] = fullContent.images
       .slice(0, limit)
-      .map((img: any) => ({
-        id: img.id || Math.random().toString(),
-        title: img.title || `${city} Historical Image`,
-        url: img.url,
-        thumbnail: img.thumbnail || img.url,
-        creator: img.creator || 'Unknown',
-        license: img.license || 'cc0',
-        license_url: img.license_url || '',
-        source: img.source || 'openverse'
+      .map((imgUrl: string, index: number) => ({
+        id: `wiki-${city}-${index}`,
+        title: `${city} - Historical Image ${index + 1}`,
+        url: imgUrl.startsWith('//') ? `https:${imgUrl}` : imgUrl,
+        thumbnail: imgUrl.startsWith('//') ? `https:${imgUrl}` : imgUrl,
+        creator: 'Wikipedia Contributors',
+        license: 'CC BY-SA',
+        license_url: 'https://creativecommons.org/licenses/by-sa/3.0/',
+        source: 'wikipedia'
       }));
-    
+
     return images;
   } catch (error) {
-    console.error('Error fetching Openverse images:', error);
+    console.error('Error fetching Wikipedia images:', error);
     return [];
   }
 }
@@ -334,43 +337,56 @@ export async function fetchWikidataEvents(entityId: string, startYear?: number, 
   }
 }
 
-// Fetch historical weather data from Open-Meteo
+// Fetch historical weather data from Open-Meteo with caching
 export async function fetchHistoricalWeather(lat: number, lng: number, year: number): Promise<any> {
-  try {
-    // Create a date range for the middle of the year
-    const startDate = `${year}-06-01`;
-    const endDate = `${year}-06-07`;
+  return cacheService.getOrFetch(
+    CACHE_KEYS.WEATHER,
+    async () => {
+      // Create a date range for the middle of the year
+      const startDate = `${year}-06-01`;
+      const endDate = `${year}-06-07`;
 
-    const url = `https://archive-api.open-meteo.com/v1/archive?latitude=${lat}&longitude=${lng}&start_date=${startDate}&end_date=${endDate}&daily=temperature_2m_max,temperature_2m_min,precipitation_sum&timezone=auto`;
-    
-    const response = await fetch(url);
-    if (!response.ok) {
-      throw new Error(`Weather API error: ${response.status}`);
-    }
-    
-    const data = await response.json();
-    
-    // Process the weather data to return average values
-    if (data.daily && data.daily.temperature_2m_max && data.daily.temperature_2m_max.length > 0) {
-      const avgMaxTemp = data.daily.temperature_2m_max.reduce((a: number, b: number) => a + b, 0) / data.daily.temperature_2m_max.length;
-      const avgMinTemp = data.daily.temperature_2m_min.reduce((a: number, b: number) => a + b, 0) / data.daily.temperature_2m_min.length;
-      const totalPrecip = data.daily.precipitation_sum.reduce((a: number, b: number) => a + b, 0);
+      const url = `https://archive-api.open-meteo.com/v1/archive?latitude=${lat}&longitude=${lng}&start_date=${startDate}&end_date=${endDate}&daily=temperature_2m_max,temperature_2m_min,precipitation_sum&timezone=auto`;
       
-      return {
-        temperature: Math.round((avgMaxTemp + avgMinTemp) / 2),
-        maxTemp: Math.round(avgMaxTemp),
-        minTemp: Math.round(avgMinTemp),
-        precipitation: Math.round(totalPrecip * 10) / 10,
-        condition: totalPrecip > 5 ? 'Rainy' : totalPrecip > 1 ? 'Partly Cloudy' : 'Clear',
-        icon: totalPrecip > 5 ? '🌧️' : totalPrecip > 1 ? '⛅' : '☀️'
-      };
-    }
-    
-    return null;
-  } catch (error) {
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error(`Weather API error: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      
+      // Process the weather data to return average values
+      if (data.daily && data.daily.temperature_2m_max && data.daily.temperature_2m_max.length > 0) {
+        const validMaxTemps = data.daily.temperature_2m_max.filter((temp: number) => temp !== null && !isNaN(temp));
+        const validMinTemps = data.daily.temperature_2m_min.filter((temp: number) => temp !== null && !isNaN(temp));
+        const validPrecip = data.daily.precipitation_sum.filter((precip: number) => precip !== null && !isNaN(precip));
+        
+        if (validMaxTemps.length > 0 && validMinTemps.length > 0) {
+          const avgMaxTemp = validMaxTemps.reduce((a: number, b: number) => a + b, 0) / validMaxTemps.length;
+          const avgMinTemp = validMinTemps.reduce((a: number, b: number) => a + b, 0) / validMinTemps.length;
+          const totalPrecip = validPrecip.reduce((a: number, b: number) => a + b, 0);
+          
+          return {
+            temperature: Math.round((avgMaxTemp + avgMinTemp) / 2),
+            maxTemp: Math.round(avgMaxTemp),
+            minTemp: Math.round(avgMinTemp),
+            precipitation: Math.round(totalPrecip * 10) / 10,
+            condition: totalPrecip > 5 ? 'Rainy' : totalPrecip > 1 ? 'Partly Cloudy' : 'Clear',
+            icon: totalPrecip > 5 ? '🌧️' : totalPrecip > 1 ? '⛅' : '☀️',
+            year,
+            date: startDate
+          };
+        }
+      }
+      
+      throw new Error('No valid weather data found');
+    },
+    { lat: Math.round(lat * 100) / 100, lng: Math.round(lng * 100) / 100, year },
+    CACHE_TTL.VERY_LONG
+  ).catch(error => {
     console.error('Error fetching weather:', error);
     return null;
-  }
+  });
 }
 
 // Met Museum API
@@ -570,48 +586,115 @@ export function filterEventsByYear(events: FilteredEvent[], startYear: number, e
   return events.filter(event => event.year >= startYear && event.year <= endYear);
 }
 
-// Combined data fetcher for a city with enhanced filtering
-export async function fetchCityData(city: string, startYear?: number, endYear?: number) {
-  const [
-    wikipediaSummary,
-    wikipediaContent,
-    geoNamesData,
-    openverseImages,
-    metArtifacts
-  ] = await Promise.allSettled([
-    fetchWikipediaSummary(city),
-    fetchWikipediaFullContent(city),
-    fetchGeoNamesData(city),
-    fetchOpenverseImages(city, undefined, 12),
-    fetchMetArtifacts(city, 3)
-  ]);
+// Main function to fetch all city data with smart caching
+export async function fetchCityData(city: string, startYear?: number, endYear?: number): Promise<any> {
+  return cacheService.getOrFetch(
+    CACHE_KEYS.CITY_DATA,
+    async () => {
+      console.log(`Fetching comprehensive data for: ${city}`);
+      
+      // Fetch all data in parallel with Promise.allSettled for resilience
+      const [
+        wikipediaSummaryResult,
+        wikipediaFullResult,
+        geoNamesResult,
+        wikidataEntityResult
+      ] = await Promise.allSettled([
+        fetchWikipediaSummary(city),
+        fetchWikipediaFullContent(city),
+        fetchGeoNamesData(city),
+        fetchWikidataEntityId(city)
+      ]);
 
-  // Get Wikidata events with date filtering
-  let wikidataEvents: WikidataEvent[] = [];
-  let weatherData: WeatherData[] = [];
-  
-  if (wikipediaSummary.status === 'fulfilled' && wikipediaSummary.value) {
-    try {
-      const entityId = await fetchWikidataEntityId(city);
-      if (entityId) {
-        wikidataEvents = await fetchWikidataEvents(entityId, startYear, endYear);
+      // Process initial results
+      const wikipediaSummary = wikipediaSummaryResult.status === 'fulfilled' ? wikipediaSummaryResult.value : null;
+      const wikipediaFull = wikipediaFullResult.status === 'fulfilled' ? wikipediaFullResult.value : null;
+      const geoNames = geoNamesResult.status === 'fulfilled' ? geoNamesResult.value : null;
+      const wikidataEntityId = wikidataEntityResult.status === 'fulfilled' ? wikidataEntityResult.value : null;
+
+      // Fetch images and additional data
+      const [
+        wikipediaImagesResult,
+        metArtifactsResult
+      ] = await Promise.allSettled([
+        fetchWikipediaImages(city, 8),
+        fetchMetArtifacts(city, 3)
+      ]);
+
+      const wikipediaImages = wikipediaImagesResult.status === 'fulfilled' ? wikipediaImagesResult.value : [];
+      const metArtifacts = metArtifactsResult.status === 'fulfilled' ? metArtifactsResult.value : [];
+
+      // Fetch Wikidata events if entity ID is available
+      let wikidataEvents: WikidataEvent[] = [];
+      if (wikidataEntityId) {
+        try {
+          wikidataEvents = await fetchWikidataEvents(wikidataEntityId, startYear, endYear);
+        } catch (error) {
+          console.error('Error fetching Wikidata events:', error);
+        }
       }
-    } catch (error) {
-      console.error('Error fetching Wikidata events:', error);
-    }
-  }
 
+      // Process Wikipedia sections to extract historical events
+      const wikipediaEvents = (wikipediaFull?.sections || [])
+        .filter(section => 
+          section.title.toLowerCase().includes('history') ||
+          section.title.toLowerCase().includes('timeline') ||
+          section.title.toLowerCase().includes('events')
+        )
+        .map((section, index) => {
+          // Try to extract years from content
+          const yearMatches = section.content.match(/\b(1[0-9]{3}|20[0-2][0-9])\b/g);
+          const year = yearMatches ? parseInt(yearMatches[0]) : new Date().getFullYear();
+          
+          return {
+            id: `wiki-section-${index}`,
+            date: `${year}-01-01`,
+            label: section.title,
+            description: section.content.substring(0, 200) + '...',
+            type: 'historical',
+            year
+          };
+        });
 
-  // Process and filter events
-  const filteredEvents = wikidataEvents.map(categorizeEvent);
-  const uniqueEvents = removeDuplicateEvents(filteredEvents);
+      // Combine all events
+      const allEvents = [...wikidataEvents, ...wikipediaEvents];
 
-  return {
-    wikipedia: wikipediaSummary.status === 'fulfilled' ? wikipediaSummary.value : null,
-    wikipediaContent: wikipediaContent.status === 'fulfilled' ? wikipediaContent.value : null,
-    geoNames: geoNamesData.status === 'fulfilled' ? geoNamesData.value : null,
-    images: openverseImages.status === 'fulfilled' ? openverseImages.value : [],
-    artifacts: metArtifacts.status === 'fulfilled' ? metArtifacts.value : [],
-    events: uniqueEvents
-  };
+      const processedData = {
+        city,
+        wikipedia: wikipediaSummary,
+        wikipediaFull,
+        geoNames,
+        events: allEvents,
+        images: wikipediaImages,
+        artifacts: metArtifacts,
+        location: {
+          name: wikipediaSummary?.title || geoNames?.name || city,
+          subtitle: geoNames?.fclName || "Historic Location",
+          description: wikipediaSummary?.extract || `Exploring the historical and cultural heritage of ${city}.`,
+          coordinates: geoNames ? `${parseFloat(geoNames.lat).toFixed(1)}°N, ${parseFloat(geoNames.lng).toFixed(1)}°E` : "",
+          elevation: "",
+          weather: {
+            temperature: "Loading...",
+            condition: "Checking conditions"
+          },
+          localTime: new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour12: false })
+        },
+        summary: {
+          totalEvents: allEvents.length,
+          totalImages: wikipediaImages.length,
+          totalArtifacts: metArtifacts.length,
+          hasCoordinates: !!geoNames,
+          hasWikipediaContent: !!wikipediaSummary
+        }
+      };
+
+      console.log(`Data fetching completed for ${city}:`, processedData.summary);
+      return processedData;
+    },
+    { city, startYear, endYear },
+    CACHE_TTL.MEDIUM
+  ).catch(error => {
+    console.error('Error in fetchCityData:', error);
+    throw error;
+  });
 }

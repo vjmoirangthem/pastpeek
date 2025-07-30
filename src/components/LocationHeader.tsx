@@ -16,9 +16,17 @@ interface LocationHeaderProps {
     localTime: string;
   };
   onTextToSpeech: (text: string) => void;
+  weather?: {
+    temperature: number;
+    maxTemp: number;
+    minTemp: number;
+    precipitation: number;
+    condition: string;
+    icon: string;
+  } | null;
 }
 
-export function LocationHeader({ location, onTextToSpeech }: LocationHeaderProps) {
+export function LocationHeader({ location, onTextToSpeech, weather }: LocationHeaderProps) {
   const [isReading, setIsReading] = useState(false);
 
   const handleTTS = () => {
