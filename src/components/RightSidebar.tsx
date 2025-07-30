@@ -10,9 +10,12 @@ interface RightSidebarProps {
     description: string;
   }>;
   weather: {
-    icon: string;
-    description: string;
-    detail: string;
+    icon?: string;
+    description?: string;
+    detail?: string;
+    condition?: string;
+    temperature?: number;
+    precipitation?: number;
   };
   location: string;
 }
@@ -97,12 +100,24 @@ export function RightSidebar({ currentYear, onYearJump, keyMoments, weather, loc
           transition={{ duration: 0.3 }}
           className="text-center p-4 bg-gradient-to-br from-blue-500/10 to-blue-600/10 border border-blue-500/20 rounded-lg"
         >
-          <div className="text-3xl mb-2">{weather.icon}</div>
+          <div className="text-3xl mb-2">{weather?.icon || '🌤️'}</div>
           <div className="font-medium text-foreground mb-1">
-            {weather.description}
+            {weather?.condition || weather?.description || 'Historical Period'}
           </div>
-          <div className="text-xs text-muted-foreground">
-            {weather.detail}
+          {weather?.temperature && (
+            <div className="flex justify-center gap-4 mt-2 text-sm">
+              <span className="text-muted-foreground">
+                🌡️ {weather.temperature}°C
+              </span>
+              {weather?.precipitation && weather.precipitation > 0 && (
+                <span className="text-muted-foreground">
+                  💧 {weather?.precipitation}mm
+                </span>
+              )}
+            </div>
+          )}
+          <div className="text-xs text-muted-foreground mt-2">
+            {weather?.detail || `Climate data for ${location} in ${currentYear}`}
           </div>
         </motion.div>
       </div>

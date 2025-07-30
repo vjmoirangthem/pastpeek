@@ -1,7 +1,7 @@
+import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Moon, Sun, Menu, Scroll } from 'lucide-react';
 import { SearchBox } from './SearchBox';
-import { useState } from 'react';
 
 interface HeaderProps {
   searchValue: string;
@@ -125,6 +125,3 @@ export function Header({
     </motion.header>
   );
 }
-
-// Fix React import
-import React from 'react';

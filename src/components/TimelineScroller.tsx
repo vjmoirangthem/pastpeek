@@ -1,14 +1,9 @@
 import { motion } from 'framer-motion';
 import { useState } from 'react';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 
 interface TimelineScrollerProps {
   currentYear: number;
   onYearChange: (year: number) => void;
-  onYearRangeChange?: (startYear: number, endYear: number) => void;
-  yearRange?: { start: number; end: number };
   keyMoments: Array<{
     year: number;
     title: string;
@@ -19,39 +14,32 @@ interface TimelineScrollerProps {
 export function TimelineScroller({ 
   currentYear, 
   onYearChange, 
-  onYearRangeChange, 
-  yearRange, 
   keyMoments 
 }: TimelineScrollerProps) {
   const [isHovering, setIsHovering] = useState(false);
-  const [useRange, setUseRange] = useState(!!yearRange);
-  const [startYear, setStartYear] = useState(yearRange?.start || 1600);
-  const [endYear, setEndYear] = useState(yearRange?.end || 2024);
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStartTime, setDragStartTime] = useState<number | null>(null);
 
   const minYear = -5000; // Support BC dates
-  const maxYear = 2024;
+  const maxYear = new Date().getFullYear();
 
-  const handleRangeToggle = (checked: boolean) => {
-    setUseRange(checked);
-    if (checked && onYearRangeChange) {
-      onYearRangeChange(startYear, endYear);
-    }
+  const handleSliderStart = () => {
+    setIsDragging(true);
+    setDragStartTime(Date.now());
   };
 
-  const handleStartYearChange = (value: string) => {
-    const year = parseInt(value) || minYear;
-    setStartYear(year);
-    if (useRange && onYearRangeChange) {
-      onYearRangeChange(year, endYear);
-    }
+  const handleSliderEnd = () => {
+    setIsDragging(false);
+    setDragStartTime(null);
   };
 
-  const handleEndYearChange = (value: string) => {
-    const year = parseInt(value) || maxYear;
-    setEndYear(year);
-    if (useRange && onYearRangeChange) {
-      onYearRangeChange(startYear, year);
-    }
+  const getSliderStep = () => {
+    if (!isDragging || !dragStartTime) return 1;
+    const holdTime = Date.now() - dragStartTime;
+    // More precision the longer you hold
+    if (holdTime > 2000) return 1; // Very precise after 2 seconds
+    if (holdTime > 1000) return 5; // Moderate precision after 1 second
+    return 25; // Default step for quick movements
   };
 
   const formatYear = (year: number): string => {
@@ -71,67 +59,31 @@ export function TimelineScroller({
       {/* Year Display */}
       <motion.div 
         className="text-center mb-6"
-        animate={{ scale: isHovering ? 1.05 : 1 }}
+        animate={{ scale: isHovering || isDragging ? 1.05 : 1 }}
         transition={{ duration: 0.2 }}
       >
         <h2 className="text-4xl font-serif font-bold text-museum-gold drop-shadow-sm">
-          {useRange ? `${formatYear(startYear)} - ${formatYear(endYear)}` : formatYear(currentYear)}
+          {formatYear(currentYear)}
         </h2>
         <p className="text-muted-foreground font-sans">
-          {useRange 
-            ? `Exploring ${endYear - startYear + 1} years of history`
-            : currentYear === 2024 
-              ? 'Present day' 
-              : currentYear < 0
-                ? `${Math.abs(currentYear)} years before Christ`
-                : `${Math.abs(2024 - currentYear)} years ago`
+          {currentYear === maxYear 
+            ? 'Present day' 
+            : currentYear < 0
+              ? `${Math.abs(currentYear)} years before Christ`
+              : `${Math.abs(maxYear - currentYear)} years ago`
           }
         </p>
+        {isDragging && (
+          <motion.p 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="text-xs text-museum-gold mt-2"
+          >
+            Hold longer for precise control • Step: {getSliderStep()} years
+          </motion.p>
+        )}
       </motion.div>
 
-      {/* Range Controls */}
-      <div className="mb-6 p-4 bg-secondary/50 rounded-lg border border-border">
-        <div className="flex items-center space-x-2 mb-4">
-          <Checkbox 
-            id="useRange" 
-            checked={useRange} 
-            onCheckedChange={handleRangeToggle}
-          />
-          <Label htmlFor="useRange" className="text-sm font-medium">
-            Filter by year range
-          </Label>
-        </div>
-        
-        {useRange && (
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <Label htmlFor="startYear" className="text-xs text-muted-foreground">Start Year</Label>
-              <Input
-                id="startYear"
-                type="number"
-                value={startYear}
-                onChange={(e) => handleStartYearChange(e.target.value)}
-                min={minYear}
-                max={maxYear}
-                className="h-8 text-sm"
-                placeholder="e.g. -500 for 500 BC"
-              />
-            </div>
-            <div>
-              <Label htmlFor="endYear" className="text-xs text-muted-foreground">End Year</Label>
-              <Input
-                id="endYear"
-                type="number"
-                value={endYear}
-                onChange={(e) => handleEndYearChange(e.target.value)}
-                min={minYear}
-                max={maxYear}
-                className="h-8 text-sm"
-              />
-            </div>
-          </div>
-        )}
-      </div>
 
       {/* Timeline Slider */}
       <div className="relative mb-6">
@@ -139,16 +91,22 @@ export function TimelineScroller({
           type="range"
           min={minYear}
           max={maxYear}
+          step={getSliderStep()}
           value={currentYear}
           onChange={(e) => onYearChange(parseInt(e.target.value))}
+          onMouseDown={handleSliderStart}
+          onMouseUp={handleSliderEnd}
+          onTouchStart={handleSliderStart}
+          onTouchEnd={handleSliderEnd}
           onMouseEnter={() => setIsHovering(true)}
           onMouseLeave={() => setIsHovering(false)}
-          className="w-full h-3 rounded-lg appearance-none cursor-pointer bg-gradient-to-r from-muted via-museum-gold to-accent slider-thumb"
+          className="w-full h-4 rounded-lg appearance-none cursor-pointer bg-gradient-to-r from-muted via-museum-gold to-accent slider-thumb transition-all duration-200"
           style={{
             background: `linear-gradient(90deg, 
               hsl(var(--muted)) 0%, 
               hsl(var(--museum-gold)) ${((currentYear - minYear) / (maxYear - minYear)) * 100}%, 
-              hsl(var(--accent)) 100%)`
+              hsl(var(--accent)) 100%)`,
+            height: isDragging ? '20px' : '16px'
           }}
         />
         
@@ -160,7 +118,7 @@ export function TimelineScroller({
           <span>1000</span>
           <span>1500</span>
           <span>2000</span>
-          <span>2024</span>
+          <span>{maxYear}</span>
         </div>
       </div>
 

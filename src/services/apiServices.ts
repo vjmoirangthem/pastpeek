@@ -334,37 +334,42 @@ export async function fetchWikidataEvents(entityId: string, startYear?: number, 
   }
 }
 
-// Open-Meteo Weather API for historical weather
-export async function fetchHistoricalWeather(
-  lat: number, 
-  lng: number, 
-  startDate: string, 
-  endDate: string
-): Promise<WeatherData[]> {
+// Fetch historical weather data from Open-Meteo
+export async function fetchHistoricalWeather(lat: number, lng: number, year: number): Promise<any> {
   try {
-    const response = await fetch(
-      `https://archive-api.open-meteo.com/v1/archive?latitude=${lat}&longitude=${lng}&start_date=${startDate}&end_date=${endDate}&daily=temperature_2m_max,temperature_2m_min,precipitation_sum&timezone=auto`
-    );
+    // Create a date range for the middle of the year
+    const startDate = `${year}-06-01`;
+    const endDate = `${year}-06-07`;
+
+    const url = `https://archive-api.open-meteo.com/v1/archive?latitude=${lat}&longitude=${lng}&start_date=${startDate}&end_date=${endDate}&daily=temperature_2m_max,temperature_2m_min,precipitation_sum&timezone=auto`;
     
+    const response = await fetch(url);
     if (!response.ok) {
-      throw new Error(`Open-Meteo API error: ${response.status}`);
+      throw new Error(`Weather API error: ${response.status}`);
     }
     
     const data = await response.json();
     
-    if (!data.daily) {
-      return [];
+    // Process the weather data to return average values
+    if (data.daily && data.daily.temperature_2m_max && data.daily.temperature_2m_max.length > 0) {
+      const avgMaxTemp = data.daily.temperature_2m_max.reduce((a: number, b: number) => a + b, 0) / data.daily.temperature_2m_max.length;
+      const avgMinTemp = data.daily.temperature_2m_min.reduce((a: number, b: number) => a + b, 0) / data.daily.temperature_2m_min.length;
+      const totalPrecip = data.daily.precipitation_sum.reduce((a: number, b: number) => a + b, 0);
+      
+      return {
+        temperature: Math.round((avgMaxTemp + avgMinTemp) / 2),
+        maxTemp: Math.round(avgMaxTemp),
+        minTemp: Math.round(avgMinTemp),
+        precipitation: Math.round(totalPrecip * 10) / 10,
+        condition: totalPrecip > 5 ? 'Rainy' : totalPrecip > 1 ? 'Partly Cloudy' : 'Clear',
+        icon: totalPrecip > 5 ? '🌧️' : totalPrecip > 1 ? '⛅' : '☀️'
+      };
     }
     
-    return data.daily.time.map((date: string, index: number) => ({
-      date,
-      temperature_max: data.daily.temperature_2m_max[index],
-      temperature_min: data.daily.temperature_2m_min[index],
-      precipitation: data.daily.precipitation_sum[index]
-    }));
+    return null;
   } catch (error) {
-    console.error('Error fetching historical weather:', error);
-    return [];
+    console.error('Error fetching weather:', error);
+    return null;
   }
 }
 
@@ -596,23 +601,6 @@ export async function fetchCityData(city: string, startYear?: number, endYear?: 
     }
   }
 
-  // Fetch historical weather if coordinates available
-  if (geoNamesData.status === 'fulfilled' && geoNamesData.value && startYear && endYear) {
-    try {
-      const lat = parseFloat(geoNamesData.value.lat);
-      const lng = parseFloat(geoNamesData.value.lng);
-      
-      // Get weather for a sample date in the year range
-      const sampleYear = Math.floor((startYear + endYear) / 2);
-      weatherData = await fetchHistoricalWeather(
-        lat, lng, 
-        `${sampleYear}-01-01`, 
-        `${sampleYear}-12-31`
-      );
-    } catch (error) {
-      console.error('Error fetching weather data:', error);
-    }
-  }
 
   // Process and filter events
   const filteredEvents = wikidataEvents.map(categorizeEvent);
@@ -624,7 +612,6 @@ export async function fetchCityData(city: string, startYear?: number, endYear?: 
     geoNames: geoNamesData.status === 'fulfilled' ? geoNamesData.value : null,
     images: openverseImages.status === 'fulfilled' ? openverseImages.value : [],
     artifacts: metArtifacts.status === 'fulfilled' ? metArtifacts.value : [],
-    events: uniqueEvents,
-    weather: weatherData
+    events: uniqueEvents
   };
 }

@@ -7,8 +7,9 @@ import { EventCard } from '@/components/EventCard';
 import { Sidebar } from '@/components/Sidebar';
 import { RightSidebar } from '@/components/RightSidebar';
 import { Modal } from '@/components/Modal';
+import { TTSFloater } from '@/components/TTSFloater';
 import { useToast } from '@/hooks/use-toast';
-import { fetchCityData, WikidataEvent, OpenverseImage, MetArtifact } from '@/services/apiServices';
+import { fetchCityData, WikidataEvent, OpenverseImage, MetArtifact, fetchHistoricalWeather } from '@/services/apiServices';
 import { EventCardSkeleton, LocationHeaderSkeleton, ImageGallerySkeleton, SidebarSkeleton } from '@/components/LoadingSkeleton';
 
 // Sample data - in a real app, this would come from APIs
@@ -147,6 +148,9 @@ const Index = () => {
   const [currentCity, setCurrentCity] = useState("Imphal");
   const [yearRange, setYearRange] = useState<{start: number, end: number} | undefined>();
   const [currentSpeech, setCurrentSpeech] = useState<SpeechSynthesisUtterance | null>(null);
+  const [showTTSFloater, setShowTTSFloater] = useState(false);
+  const [ttsText, setTtsText] = useState('');
+  const [currentWeather, setCurrentWeather] = useState<any>(null);
   const { toast } = useToast();
 
   // Get current timeline data - now using API data
@@ -255,6 +259,29 @@ const Index = () => {
     }
   };
 
+  // Load weather data when year or city changes
+  const loadWeatherData = async (year: number, city: string) => {
+    if (apiData?.geoNames) {
+      try {
+        const weather = await fetchHistoricalWeather(
+          parseFloat(apiData.geoNames.lat), 
+          parseFloat(apiData.geoNames.lng), 
+          year
+        );
+        setCurrentWeather(weather);
+      } catch (error) {
+        console.error('Error loading weather:', error);
+      }
+    }
+  };
+
+  // Load weather when year changes
+  useEffect(() => {
+    if (apiData?.geoNames) {
+      loadWeatherData(currentYear, currentCity);
+    }
+  }, [currentYear, apiData?.geoNames, currentCity]);
+
   const handleSearch = async (query: string) => {
     setSearchValue(query);
     const cityName = query.split(',')[0].trim(); // Extract city name from "City, State/Country"
@@ -277,20 +304,57 @@ const Index = () => {
       return;
     }
 
-    // Stop current speech if playing
+    setTtsText(text);
+    setShowTTSFloater(true);
+    
+    if (!currentSpeech) {
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.rate = 0.8;
+      utterance.onend = () => {
+        setCurrentSpeech(null);
+        setShowTTSFloater(false);
+      };
+      utterance.onerror = () => {
+        setCurrentSpeech(null);
+        setShowTTSFloater(false);
+      };
+      
+      setCurrentSpeech(utterance);
+      speechSynthesis.speak(utterance);
+    }
+  };
+
+  const handleTTSToggle = () => {
+    if (currentSpeech) {
+      if (speechSynthesis.paused) {
+        speechSynthesis.resume();
+      } else {
+        speechSynthesis.pause();
+      }
+    }
+  };
+
+  const handleTTSSeek = (seconds: number) => {
+    // Since Web Speech API doesn't support seeking, restart from beginning
+    if (currentSpeech) {
+      speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance(ttsText);
+      utterance.rate = 0.8;
+      utterance.onend = () => {
+        setCurrentSpeech(null);
+        setShowTTSFloater(false);
+      };
+      setCurrentSpeech(utterance);
+      speechSynthesis.speak(utterance);
+    }
+  };
+
+  const handleTTSClose = () => {
     if (currentSpeech) {
       speechSynthesis.cancel();
       setCurrentSpeech(null);
-      return;
     }
-
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.rate = 0.8;
-    utterance.onend = () => setCurrentSpeech(null);
-    utterance.onerror = () => setCurrentSpeech(null);
-    
-    setCurrentSpeech(utterance);
-    speechSynthesis.speak(utterance);
+    setShowTTSFloater(false);
   };
 
   const handleEventClick = (event: any) => {
@@ -307,6 +371,12 @@ const Index = () => {
         isDark={isDark}
         onThemeToggle={() => setIsDark(!isDark)}
         onMenuToggle={() => setShowMenu(!showMenu)}
+      />
+
+      {/* Sidebar for Mobile */}
+      <Sidebar 
+        isOpen={showMenu} 
+        onClose={() => setShowMenu(false)} 
       />
 
       {/* Main Content */}
@@ -329,11 +399,6 @@ const Index = () => {
               <TimelineScroller
                 currentYear={currentYear}
                 onYearChange={setCurrentYear}
-                onYearRangeChange={(start, end) => {
-                  setYearRange({start, end});
-                  loadCityData(currentCity, start, end);
-                }}
-                yearRange={yearRange}
                 keyMoments={apiData?.events ? apiData.events
                   .filter((event: any) => event.year && typeof event.year === 'number')
                   .reduce((unique: any[], event: any) => {
@@ -500,7 +565,7 @@ const Index = () => {
                       title: event.label,
                       description: event.description?.substring(0, 50) + '...' || 'Historical Event'
                     })) : keyMoments}
-                    weather={currentData.weather}
+                    weather={currentWeather || currentData.weather}
                     location={apiData?.geoNames?.name || currentCity}
                   />
                 )}
@@ -518,6 +583,16 @@ const Index = () => {
         content={selectedEvent ? (selectedEvent.imageUrl ? `${selectedEvent.content}\n\n[Image: ${selectedEvent.imageUrl}]` : `${selectedEvent.content}\n\nThis ${selectedEvent.type} provides valuable insight into the historical and cultural heritage of the region.`) : ''}
         category={selectedEvent?.type}
         sources={['Historical Archives', 'Academic Research', 'Wikimedia Commons']}
+      />
+
+      {/* TTS Floater */}
+      <TTSFloater
+        isOpen={showTTSFloater}
+        onClose={handleTTSClose}
+        text={ttsText}
+        isPlaying={!!currentSpeech && !speechSynthesis.paused}
+        onTogglePlay={handleTTSToggle}
+        onSeek={handleTTSSeek}
       />
     </div>
   );
