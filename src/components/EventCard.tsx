@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { Clock, MapPin, Users, Scroll, Sword, Palette, TrendingUp } from 'lucide-react';
+import { Clock, MapPin, Users, Scroll, Sword, Palette, TrendingUp, Calendar } from 'lucide-react';
 
 interface EventCardProps {
   event: {
@@ -40,8 +40,8 @@ const typeColors = {
 };
 
 export function EventCard({ event, index, onClick }: EventCardProps) {
-  const Icon = typeIcons[event.type];
-  const colorClass = typeColors[event.type];
+  const Icon = typeIcons[event.type] || Calendar;
+  const colorClass = typeColors[event.type] || 'from-gray-500/20 to-gray-600/20 border-gray-500/30';
   
   const layoutClasses = {
     small: 'md:col-span-1 md:row-span-1',
