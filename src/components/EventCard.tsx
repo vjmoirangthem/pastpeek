@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { Clock, MapPin, Users, Scroll, Sword, Palette, TrendingUp, Calendar } from 'lucide-react';
+import { Clock, MapPin, Users, ScrollText, Swords, Palette, TrendingUp, Calendar } from 'lucide-react';
 
 interface EventCardProps {
   event: {
@@ -19,12 +19,12 @@ interface EventCardProps {
 
 const typeIcons = {
   political: Clock,
-  military: Sword,
+  military: Swords,
   cultural: Palette,
   economic: TrendingUp,
   social: Users,
   international: MapPin,
-  development: Scroll,
+  development: ScrollText,
   sports: Users
 };
 
@@ -84,7 +84,7 @@ export function EventCard({ event, index, onClick }: EventCardProps) {
           ) : (
             <div className="w-full h-full flex items-center justify-center text-muted-foreground">
               <div className="text-center">
-                <Scroll className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                <ScrollText className="w-8 h-8 mx-auto mb-2 opacity-50" />
                 <span className="text-xs">Historical Image</span>
               </div>
             </div>
