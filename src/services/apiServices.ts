@@ -337,6 +337,123 @@ export async function fetchWikidataEvents(entityId: string, startYear?: number, 
   }
 }
 
+// Fetch current weather data from Open-Meteo
+export async function fetchCurrentWeather(lat: number, lng: number): Promise<any> {
+  try {
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current_weather=true`;
+    
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error(`Current weather API error: ${response.status}`);
+    }
+    
+    const data = await response.json();
+    
+    return {
+      temperature: Math.round(data.current_weather.temperature),
+      condition: getWeatherCondition(data.current_weather.weathercode),
+      windSpeed: data.current_weather.windspeed,
+      windDirection: data.current_weather.winddirection
+    };
+  } catch (error) {
+    console.error('Error fetching current weather:', error);
+    return null;
+  }
+}
+
+// Helper function to convert weather codes to conditions
+function getWeatherCondition(code: number): string {
+  const conditions: { [key: number]: string } = {
+    0: 'Clear sky',
+    1: 'Mainly clear',
+    2: 'Partly cloudy',
+    3: 'Overcast',
+    45: 'Foggy',
+    48: 'Depositing rime fog',
+    51: 'Light drizzle',
+    53: 'Moderate drizzle',
+    55: 'Dense drizzle',
+    61: 'Slight rain',
+    63: 'Moderate rain',
+    65: 'Heavy rain',
+    71: 'Slight snow',
+    73: 'Moderate snow',
+    75: 'Heavy snow',
+    80: 'Rain showers',
+    81: 'Moderate rain showers',
+    82: 'Violent rain showers',
+    95: 'Thunderstorm',
+    96: 'Thunderstorm with hail',
+    99: 'Thunderstorm with heavy hail'
+  };
+  
+  return conditions[code] || 'Unknown';
+}
+
+// Fetch geocoding data from Nominatim
+export async function fetchGeocoding(cityName: string): Promise<{ lat: number, lng: number, timezone: string } | null> {
+  try {
+    const encodedCity = encodeURIComponent(cityName);
+    const url = `https://nominatim.openstreetmap.org/search?q=${encodedCity}&format=json&limit=1`;
+    
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'PastPeek-App/1.0'
+      }
+    });
+    
+    if (!response.ok) {
+      throw new Error(`Geocoding API error: ${response.status}`);
+    }
+    
+    const data = await response.json();
+    
+    if (data && data.length > 0) {
+      const result = data[0];
+      
+      // Get timezone for the coordinates
+      const timezoneResponse = await fetch(
+        `https://timeapi.io/api/TimeZone/coordinate?latitude=${result.lat}&longitude=${result.lon}`
+      );
+      
+      let timezone = 'UTC';
+      if (timezoneResponse.ok) {
+        const timezoneData = await timezoneResponse.json();
+        timezone = timezoneData.timeZone || 'UTC';
+      }
+      
+      return {
+        lat: parseFloat(result.lat),
+        lng: parseFloat(result.lon),
+        timezone: timezone
+      };
+    }
+    
+    return null;
+  } catch (error) {
+    console.error('Error fetching geocoding data:', error);
+    return null;
+  }
+}
+
+// Fetch elevation data from Open-Meteo
+export async function fetchElevation(lat: number, lng: number): Promise<number | null> {
+  try {
+    const url = `https://api.open-meteo.com/v1/elevation?latitude=${lat}&longitude=${lng}`;
+    
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error(`Elevation API error: ${response.status}`);
+    }
+    
+    const data = await response.json();
+    return data.elevation ? Math.round(data.elevation) : null;
+  } catch (error) {
+    console.error('Error fetching elevation:', error);
+    return null;
+  }
+}
+
 // Fetch historical weather data from Open-Meteo with caching
 export async function fetchHistoricalWeather(lat: number, lng: number, year: number): Promise<any> {
   return cacheService.getOrFetch(
@@ -677,7 +794,8 @@ export async function fetchCityData(city: string, startYear?: number, endYear?: 
             temperature: "Loading...",
             condition: "Checking conditions"
           },
-          localTime: new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour12: false })
+          localTime: "Loading...",
+          timezone: ""
         },
         summary: {
           totalEvents: allEvents.length,

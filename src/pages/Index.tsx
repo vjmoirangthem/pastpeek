@@ -9,7 +9,7 @@ import { RightSidebar } from '@/components/RightSidebar';
 import { Modal } from '@/components/Modal';
 import { TTSFloater } from '@/components/TTSFloater';
 import { useToast } from '@/hooks/use-toast';
-import { fetchCityData, WikidataEvent, OpenverseImage, MetArtifact, fetchHistoricalWeather } from '@/services/apiServices';
+import { fetchCityData, WikidataEvent, OpenverseImage, MetArtifact, fetchHistoricalWeather, fetchCurrentWeather, fetchGeocoding, fetchElevation } from '@/services/apiServices';
 import { EventCardSkeleton, LocationHeaderSkeleton, ImageGallerySkeleton, SidebarSkeleton } from '@/components/LoadingSkeleton';
 
 // Fallback data only used when API fails
@@ -23,7 +23,8 @@ const fallbackLocation = {
     temperature: "N/A",
     condition: "Data unavailable"
   },
-  localTime: new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour12: false })
+  localTime: new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour12: false }),
+  timezone: "Asia/Kolkata"
 };
 
 // Removed dummy timeline data - now using only API data
@@ -138,17 +139,60 @@ const Index = () => {
       
       // Update location info with real data
       if (data.wikipedia || data.geoNames) {
+        // Get proper coordinates and timezone for the location
+        const geocodingData = await fetchGeocoding(city);
+        let timezone = "UTC";
+        let coordinates = "";
+        let elevation = "";
+        
+        if (geocodingData) {
+          timezone = geocodingData.timezone;
+          coordinates = `${geocodingData.lat.toFixed(1)}°N, ${geocodingData.lng.toFixed(1)}°E`;
+          
+          // Fetch elevation
+          const elevationData = await fetchElevation(geocodingData.lat, geocodingData.lng);
+          elevation = elevationData ? `${elevationData}m` : "";
+          
+          // Fetch current weather
+          const currentWeather = await fetchCurrentWeather(geocodingData.lat, geocodingData.lng);
+          if (currentWeather) {
+            data.location.weather = {
+              temperature: `${currentWeather.temperature}°C`,
+              condition: currentWeather.condition
+            };
+          }
+        } else if (data.geoNames) {
+          coordinates = `${parseFloat(data.geoNames.lat).toFixed(1)}°N, ${parseFloat(data.geoNames.lng).toFixed(1)}°E`;
+        }
+        
+        // Calculate local time and time difference
+        const now = new Date();
+        const userTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+        const localTime = now.toLocaleTimeString('en-GB', { 
+          timeZone: timezone, 
+          hour12: false,
+          hour: '2-digit',
+          minute: '2-digit'
+        });
+        
+        // Calculate time difference
+        const userTime = new Date(now.toLocaleString("en-US", {timeZone: userTimezone}));
+        const locationTime = new Date(now.toLocaleString("en-US", {timeZone: timezone}));
+        const diffMs = locationTime.getTime() - userTime.getTime();
+        const diffHours = Math.round(diffMs / (1000 * 60 * 60));
+        const timeDiffText = diffHours === 0 ? "Same timezone" : 
+                           diffHours > 0 ? `+${diffHours}h from your time` : 
+                           `${diffHours}h from your time`;
+        
         const newLocation = {
           name: data.wikipedia?.title || data.geoNames?.name || city,
           subtitle: data.geoNames?.fclName || "Historic Location",
           description: data.wikipedia?.extract || `Exploring the historical and cultural heritage of ${city}.`,
-          coordinates: data.geoNames ? `${parseFloat(data.geoNames.lat).toFixed(1)}°N, ${parseFloat(data.geoNames.lng).toFixed(1)}°E` : "",
-          elevation: "",
-          weather: {
-            temperature: "Loading...",
-            condition: "Checking conditions"
-          },
-          localTime: new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour12: false })
+          coordinates: coordinates || "",
+          elevation: elevation,
+          weather: data.location.weather,
+          localTime: localTime,
+          timezone: timeDiffText
         };
         
         // Store the new location data

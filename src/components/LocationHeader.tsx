@@ -14,6 +14,7 @@ interface LocationHeaderProps {
       condition: string;
     };
     localTime: string;
+    timezone?: string;
   };
   onTextToSpeech: (text: string) => void;
   weather?: {
@@ -47,7 +48,7 @@ export function LocationHeader({ location, onTextToSpeech, weather }: LocationHe
       icon: Clock,
       title: "Local Time",
       value: location.localTime,
-      subtitle: "IST"
+      subtitle: location.timezone || "Loading..."
     },
     {
       icon: MapPin,

@@ -10,11 +10,6 @@ interface SidebarProps {
 
 export function Sidebar({ isOpen, onClose }: SidebarProps) {
   const menuItems = [
-    { icon: Scroll, label: 'Historical Timeline', href: '/' },
-    { icon: Clock, label: 'Time Periods', href: '/' },
-    { icon: Calendar, label: 'Events Calendar', href: '/' },
-    { icon: User, label: 'Personal Archive', href: '/' },
-    { icon: BookOpen, label: 'Reading List', href: '/' },
     { icon: Database, label: 'Data Sources', href: '/sources' },
     { icon: Info, label: 'About Us', href: '/about' },
     { icon: HelpCircle, label: 'Help & Support', href: '/help' },
