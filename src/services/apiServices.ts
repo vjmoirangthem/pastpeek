@@ -703,116 +703,335 @@ export function filterEventsByYear(events: FilteredEvent[], startYear: number, e
   return events.filter(event => event.year >= startYear && event.year <= endYear);
 }
 
-// Main function to fetch all city data with smart caching
-export async function fetchCityData(city: string, startYear?: number, endYear?: number): Promise<any> {
-  return cacheService.getOrFetch(
-    CACHE_KEYS.CITY_DATA,
-    async () => {
-      console.log(`Fetching comprehensive data for: ${city}`);
+// Met Museum API - Search and fetch objects
+export interface MetMuseumObject {
+  objectID: number;
+  title: string;
+  artistDisplayName: string;
+  objectDate: string;
+  medium: string;
+  dimensions: string;
+  classification: string;
+  department: string;
+  culture: string;
+  primaryImage: string;
+  primaryImageSmall: string;
+  objectURL: string;
+  objectName: string;
+  artistDisplayBio: string;
+  creditLine: string;
+  repository: string;
+}
+
+export async function fetchMetMuseumObjects(query: string): Promise<MetMuseumObject[]> {
+  try {
+    const searchResponse = await fetch(
+      `https://collectionapi.metmuseum.org/public/collection/v1/search?q=${encodeURIComponent(query)}`
+    );
+    
+    if (!searchResponse.ok) {
+      throw new Error(`Met Museum search error: ${searchResponse.status}`);
+    }
+    
+    const searchData = await searchResponse.json();
+    
+    if (!searchData.objectIDs || searchData.objectIDs.length === 0) {
+      return [];
+    }
+    
+    const objects: MetMuseumObject[] = [];
+    const objectIDs = searchData.objectIDs.slice(0, 5);
+    
+    for (const objectID of objectIDs) {
+      try {
+        const objectResponse = await fetch(
+          `https://collectionapi.metmuseum.org/public/collection/v1/objects/${objectID}`
+        );
+        
+        if (objectResponse.ok) {
+          const objectData = await objectResponse.json();
+          
+          if (objectData.title && objectData.objectDate) {
+            objects.push({
+              objectID: objectData.objectID,
+              title: objectData.title,
+              artistDisplayName: objectData.artistDisplayName || 'Unknown Artist',
+              objectDate: objectData.objectDate,
+              medium: objectData.medium || 'Unknown Medium',
+              dimensions: objectData.dimensions || 'Dimensions not available',
+              classification: objectData.classification || 'Artifact',
+              department: objectData.department || 'Unknown Department',
+              culture: objectData.culture || 'Unknown Culture',
+              primaryImage: objectData.primaryImage || '',
+              primaryImageSmall: objectData.primaryImageSmall || '',
+              objectURL: objectData.objectURL || '',
+              objectName: objectData.objectName || 'Artifact',
+              artistDisplayBio: objectData.artistDisplayBio || '',
+              creditLine: objectData.creditLine || '',
+              repository: objectData.repository || 'Metropolitan Museum of Art'
+            });
+          }
+        }
+      } catch (error) {
+        console.error(`Error fetching object ${objectID}:`, error);
+      }
+    }
+    
+    return objects;
+  } catch (error) {
+    console.error('Error fetching Met Museum objects:', error);
+    return [];
+  }
+}
+
+// Overpass API - OSM Historic Places
+export interface OSMHistoricPlace {
+  id: number;
+  type: string;
+  lat: number;
+  lon: number;
+  tags: {
+    historic?: string;
+    name?: string;
+    tourism?: string;
+    amenity?: string;
+    description?: string;
+  };
+}
+
+export async function fetchOSMHistoricPlaces(cityName: string): Promise<OSMHistoricPlace[]> {
+  try {
+    const overpassQuery = `[out:json];area[name="${cityName}"]->.searchArea;(nwr["historic"](area.searchArea););out body;`;
+    
+    const response = await fetch(
+      `https://overpass-api.de/api/interpreter?data=${encodeURIComponent(overpassQuery)}`
+    );
+    
+    if (!response.ok) {
+      throw new Error(`Overpass API error: ${response.status}`);
+    }
+    
+    const data = await response.json();
+    
+    return data.elements?.filter((element: any) => 
+      element.tags?.name && element.lat && element.lon
+    ).slice(0, 10) || [];
+  } catch (error) {
+    console.error('Error fetching OSM historic places:', error);
+    return [];
+  }
+}
+
+// Project Gutenberg API - Books search
+export interface GutenbergBook {
+  id: string;
+  title: string;
+  author: string;
+  summary?: string;
+  language?: string;
+  downloads?: number;
+  published?: string;
+  subjects?: string[];
+  downloadLinks?: {
+    epub?: string;
+    kindle?: string;
+    text?: string;
+  };
+  coverImage?: string;
+  thumbnailImage?: string;
+}
+
+export async function fetchGutenbergBooks(query: string): Promise<GutenbergBook[]> {
+  try {
+    const response = await fetch(
+      `https://www.gutenberg.org/ebooks/search.opds/?query=${encodeURIComponent(query)}`
+    );
+    
+    if (!response.ok) {
+      throw new Error(`Gutenberg API error: ${response.status}`);
+    }
+    
+    const xmlText = await response.text();
+    const parser = new DOMParser();
+    const xmlDoc = parser.parseFromString(xmlText, 'text/xml');
+    
+    const entries = xmlDoc.getElementsByTagName('entry');
+    const books: GutenbergBook[] = [];
+    
+    for (let i = 0; i < Math.min(entries.length, 10); i++) {
+      const entry = entries[i];
+      const title = entry.getElementsByTagName('title')[0]?.textContent || 'Unknown Title';
+      const content = entry.getElementsByTagName('content')[0]?.textContent || '';
+      const id = entry.getElementsByTagName('id')[0]?.textContent || '';
       
-      // Fetch all data in parallel with Promise.allSettled for resilience
-      const [
-        wikipediaSummaryResult,
-        wikipediaFullResult,
-        geoNamesResult,
-        wikidataEntityResult
-      ] = await Promise.allSettled([
-        fetchWikipediaSummary(city),
-        fetchWikipediaFullContent(city),
-        fetchGeoNamesData(city),
-        fetchWikidataEntityId(city)
-      ]);
+      if (title.includes('Sort') || !content.includes('Author:')) {
+        continue;
+      }
+      
+      const authorMatch = content.match(/Author:\s*([^\n]+)/);
+      const author = authorMatch ? authorMatch[1].trim() : 'Unknown Author';
+      
+      const bookIdMatch = id.match(/\/ebooks\/(\d+)/);
+      const bookId = bookIdMatch ? bookIdMatch[1] : '';
+      
+      if (bookId) {
+        books.push({
+          id: bookId,
+          title: title.trim(),
+          author: author,
+          summary: content.substring(0, 300) + '...',
+          coverImage: `https://www.gutenberg.org/cache/epub/${bookId}/pg${bookId}.cover.medium.jpg`,
+          thumbnailImage: `https://www.gutenberg.org/cache/epub/${bookId}/pg${bookId}.cover.small.jpg`
+        });
+      }
+    }
+    
+    return books;
+  } catch (error) {
+    console.error('Error fetching Gutenberg books:', error);
+    return [];
+  }
+}
 
-      // Process initial results
-      const wikipediaSummary = wikipediaSummaryResult.status === 'fulfilled' ? wikipediaSummaryResult.value : null;
-      const wikipediaFull = wikipediaFullResult.status === 'fulfilled' ? wikipediaFullResult.value : null;
-      const geoNames = geoNamesResult.status === 'fulfilled' ? geoNamesResult.value : null;
-      const wikidataEntityId = wikidataEntityResult.status === 'fulfilled' ? wikidataEntityResult.value : null;
-
-      // Fetch images and additional data
-      const [
-        wikipediaImagesResult,
-        metArtifactsResult
-      ] = await Promise.allSettled([
-        fetchWikipediaImages(city, 8),
-        fetchMetArtifacts(city, 3)
-      ]);
-
-      const wikipediaImages = wikipediaImagesResult.status === 'fulfilled' ? wikipediaImagesResult.value : [];
-      const metArtifacts = metArtifactsResult.status === 'fulfilled' ? metArtifactsResult.value : [];
-
-      // Fetch Wikidata events if entity ID is available
-      let wikidataEvents: WikidataEvent[] = [];
-      if (wikidataEntityId) {
-        try {
-          wikidataEvents = await fetchWikidataEvents(wikidataEntityId, startYear, endYear);
-        } catch (error) {
-          console.error('Error fetching Wikidata events:', error);
+export async function fetchGutenbergBookDetails(bookId: string): Promise<GutenbergBook | null> {
+  try {
+    const response = await fetch(
+      `https://www.gutenberg.org/ebooks/${bookId}.opds`
+    );
+    
+    if (!response.ok) {
+      throw new Error(`Gutenberg book details error: ${response.status}`);
+    }
+    
+    const xmlText = await response.text();
+    const parser = new DOMParser();
+    const xmlDoc = parser.parseFromString(xmlText, 'text/xml');
+    
+    const entries = xmlDoc.getElementsByTagName('entry');
+    if (entries.length === 0) return null;
+    
+    const entry = entries[0];
+    const title = entry.getElementsByTagName('title')[0]?.textContent || 'Unknown Title';
+    const content = entry.getElementsByTagName('content')[0]?.textContent || '';
+    
+    const authorMatch = content.match(/Author:\s*([^\n]+)/);
+    const languageMatch = content.match(/Language:\s*([^\n]+)/);
+    const downloadsMatch = content.match(/Downloads:\s*(\d+)/);
+    const publishedMatch = content.match(/Published:\s*([^\n]+)/);
+    
+    const links = entry.getElementsByTagName('link');
+    const downloadLinks: any = {};
+    
+    for (let i = 0; i < links.length; i++) {
+      const link = links[i];
+      const rel = link.getAttribute('rel');
+      const type = link.getAttribute('type');
+      const href = link.getAttribute('href');
+      
+      if (rel === 'http://opds-spec.org/acquisition' && href) {
+        if (type?.includes('epub')) {
+          downloadLinks.epub = `https://www.gutenberg.org${href}`;
+        } else if (type?.includes('kindle')) {
+          downloadLinks.kindle = `https://www.gutenberg.org${href}`;
+        } else if (type?.includes('text')) {
+          downloadLinks.text = `https://www.gutenberg.org${href}`;
         }
       }
+    }
+    
+    return {
+      id: bookId,
+      title: title.trim(),
+      author: authorMatch ? authorMatch[1].trim() : 'Unknown Author',
+      summary: content,
+      language: languageMatch ? languageMatch[1].trim() : 'Unknown',
+      downloads: downloadsMatch ? parseInt(downloadsMatch[1]) : 0,
+      published: publishedMatch ? publishedMatch[1].trim() : 'Unknown',
+      downloadLinks,
+      coverImage: `https://www.gutenberg.org/cache/epub/${bookId}/pg${bookId}.cover.medium.jpg`,
+      thumbnailImage: `https://www.gutenberg.org/cache/epub/${bookId}/pg${bookId}.cover.small.jpg`
+    };
+  } catch (error) {
+    console.error('Error fetching Gutenberg book details:', error);
+    return null;
+  }
+}
 
-      // Process Wikipedia sections to extract historical events
-      const wikipediaEvents = (wikipediaFull?.sections || [])
-        .filter(section => 
-          section.title.toLowerCase().includes('history') ||
-          section.title.toLowerCase().includes('timeline') ||
-          section.title.toLowerCase().includes('events')
-        )
-        .map((section, index) => {
-          // Try to extract years from content
-          const yearMatches = section.content.match(/\b(1[0-9]{3}|20[0-2][0-9])\b/g);
-          const year = yearMatches ? parseInt(yearMatches[0]) : new Date().getFullYear();
-          
-          return {
-            id: `wiki-section-${index}`,
-            date: `${year}-01-01`,
-            label: section.title,
-            description: section.content.substring(0, 200) + '...',
-            type: 'historical',
-            year
-          };
-        });
+// Main function to fetch all city data with smart caching
+export async function fetchCityData(city: string, startYear?: number, endYear?: number): Promise<any> {
+  try {
+    console.log(`🔍 Starting data fetch for: ${city}`);
+    
+    const [
+      wikipediaSummary,
+      geoNamesData
+    ] = await Promise.all([
+      fetchWikipediaSummary(city),
+      fetchGeoNamesData(city)
+    ]);
 
-      // Combine all events
-      const allEvents = [...wikidataEvents, ...wikipediaEvents];
+    if (!wikipediaSummary && !geoNamesData) {
+      console.warn('❌ No basic data found for city');
+      return null;
+    }
 
-      const processedData = {
-        city,
-        wikipedia: wikipediaSummary,
-        wikipediaFull,
-        geoNames,
-        events: allEvents,
-        images: wikipediaImages,
-        artifacts: metArtifacts,
-        location: {
-          name: wikipediaSummary?.title || geoNames?.name || city,
-          subtitle: geoNames?.fclName || "Historic Location",
-          description: wikipediaSummary?.extract || `Exploring the historical and cultural heritage of ${city}.`,
-          coordinates: geoNames ? `${parseFloat(geoNames.lat).toFixed(1)}°N, ${parseFloat(geoNames.lng).toFixed(1)}°E` : "",
-          elevation: "",
-          weather: {
-            temperature: "Loading...",
-            condition: "Checking conditions"
-          },
-          localTime: "Loading...",
-          timezone: ""
-        },
-        summary: {
-          totalEvents: allEvents.length,
-          totalImages: wikipediaImages.length,
-          totalArtifacts: metArtifacts.length,
-          hasCoordinates: !!geoNames,
-          hasWikipediaContent: !!wikipediaSummary
-        }
+    let coordinates = null;
+    if (geoNamesData) {
+      coordinates = {
+        lat: parseFloat(geoNamesData.lat),
+        lng: parseFloat(geoNamesData.lng)
       };
+    } else if (wikipediaSummary?.coordinates) {
+      coordinates = {
+        lat: wikipediaSummary.coordinates.lat,
+        lng: wikipediaSummary.coordinates.lon
+      };
+    }
 
-      console.log(`Data fetching completed for ${city}:`, processedData.summary);
-      return processedData;
-    },
-    { city, startYear, endYear },
-    CACHE_TTL.MEDIUM
-  ).catch(error => {
-    console.error('Error in fetchCityData:', error);
-    throw error;
-  });
+    const [
+      wikidataEntityId,
+      images,
+      historicalWeather,
+      currentWeather,
+      elevation,
+      metMuseumObjects,
+      osmHistoricPlaces,
+      gutenbergBooks
+    ] = await Promise.all([
+      fetchWikidataEntityId(city),
+      fetchWikipediaImages(city, 12),
+      coordinates ? fetchHistoricalWeather(coordinates.lat, coordinates.lng, new Date().getFullYear()) : null,
+      coordinates ? fetchCurrentWeather(coordinates.lat, coordinates.lng) : null,
+      coordinates ? fetchElevation(coordinates.lat, coordinates.lng) : null,
+      fetchMetMuseumObjects(city),
+      fetchOSMHistoricPlaces(city),
+      fetchGutenbergBooks(city)
+    ]);
+
+    let events: WikidataEvent[] = [];
+    if (wikidataEntityId) {
+      console.log(`📊 Fetching events for entity: ${wikidataEntityId}`);
+      events = await fetchWikidataEvents(wikidataEntityId, startYear, endYear);
+    }
+
+    console.log(`✅ Data fetch complete. Events: ${events.length}, Images: ${images.length}, Museum: ${metMuseumObjects.length}, Historic: ${osmHistoricPlaces.length}, Books: ${gutenbergBooks.length}`);
+
+    return {
+      name: wikipediaSummary?.title || geoNamesData?.name || city,
+      description: wikipediaSummary?.extract || `Historical information about ${city}`,
+      coordinates: geoNamesData ? `${geoNamesData.lat}°N, ${geoNamesData.lng}°E` : 'Coordinates unavailable',
+      images,
+      events,
+      historicalWeather,
+      currentWeather,
+      elevation: elevation ? `${Math.round(elevation)}m` : 'Elevation unavailable',
+      geoData: geoNamesData,
+      metMuseumObjects,
+      osmHistoricPlaces,
+      gutenbergBooks
+    };
+  } catch (error) {
+    console.error('💥 Error fetching city data:', error);
+    return null;
+  }
 }
