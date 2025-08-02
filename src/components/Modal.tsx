@@ -136,9 +136,10 @@ export function Modal({
                       className="mb-6"
                     >
                       <img
-                        src={imageUrl}
+                        src={imageUrl.includes('/thumb/') ? imageUrl.replace('/thumb/', '/').replace(/\/\d+px-.*$/, '') : imageUrl}
                         alt={title}
-                        className="w-full h-64 object-cover rounded-xl border border-border"
+                        className="w-full max-h-96 object-contain rounded-xl border border-border cursor-pointer hover:opacity-90 transition-opacity"
+                        onClick={() => window.open(imageUrl.includes('/thumb/') ? imageUrl.replace('/thumb/', '/').replace(/\/\d+px-.*$/, '') : imageUrl, '_blank')}
                       />
                       {imageLicense && (
                         <p className="text-xs text-muted-foreground mt-2 flex items-center gap-2">
