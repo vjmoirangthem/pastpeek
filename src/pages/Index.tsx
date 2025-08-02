@@ -8,8 +8,10 @@ import { Sidebar } from '@/components/Sidebar';
 import { RightSidebar } from '@/components/RightSidebar';
 import { Modal } from '@/components/Modal';
 import { TTSFloater } from '@/components/TTSFloater';
+import { MuseumSection } from '@/components/MuseumSection';
+import { HistoricPlacesSection } from '@/components/HistoricPlacesSection';
 import { useToast } from '@/hooks/use-toast';
-import { fetchCityData, WikidataEvent, OpenverseImage, MetArtifact, fetchHistoricalWeather, fetchCurrentWeather, fetchGeocoding, fetchElevation } from '@/services/apiServices';
+import { fetchCityData, WikidataEvent, OpenverseImage, MetArtifact, fetchHistoricalWeather, fetchCurrentWeather, fetchGeocoding, fetchElevation, fetchMetMuseumArtifacts, fetchHistoricPlaces, MetMuseumObject, OverpassElement } from '@/services/apiServices';
 import { EventCardSkeleton, LocationHeaderSkeleton, ImageGallerySkeleton, SidebarSkeleton } from '@/components/LoadingSkeleton';
 
 // Fallback data only used when API fails
@@ -43,6 +45,8 @@ const Index = () => {
   const [showTTSFloater, setShowTTSFloater] = useState(false);
   const [ttsText, setTtsText] = useState('');
   const [currentWeather, setCurrentWeather] = useState<any>(null);
+  const [museumArtifacts, setMuseumArtifacts] = useState<MetMuseumObject[]>([]);
+  const [historicPlaces, setHistoricPlaces] = useState<OverpassElement[]>([]);
   const { toast } = useToast();
 
   // Get current timeline data - now using only API data
@@ -197,6 +201,9 @@ const Index = () => {
         
         // Store the new location data
         setApiData(prevData => ({ ...prevData, location: newLocation }));
+        
+        // Load additional data sources
+        await loadAdditionalData(city);
       }
       
       toast({
@@ -212,6 +219,21 @@ const Index = () => {
       });
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  // Load additional data from Met Museum and Overpass APIs
+  const loadAdditionalData = async (city: string) => {
+    try {
+      // Load Met Museum artifacts
+      const artifacts = await fetchMetMuseumArtifacts(city, 6);
+      setMuseumArtifacts(artifacts);
+      
+      // Load historic places
+      const places = await fetchHistoricPlaces(city);
+      setHistoricPlaces(places);
+    } catch (error) {
+      console.error('Error loading additional data:', error);
     }
   };
 
@@ -315,6 +337,40 @@ const Index = () => {
 
   const handleEventClick = (event: any) => {
     setSelectedEvent(event);
+  };
+
+  const handleArtifactClick = (artifact: MetMuseumObject) => {
+    setSelectedEvent({
+      title: artifact.title || 'Museum Artifact',
+      content: `
+${artifact.artistDisplayName ? `Artist: ${artifact.artistDisplayName}\n` : ''}
+${artifact.objectDate ? `Date: ${artifact.objectDate}\n` : ''}
+${artifact.medium ? `Medium: ${artifact.medium}\n` : ''}
+${artifact.culture ? `Culture: ${artifact.culture}\n` : ''}
+${artifact.dimensions ? `Dimensions: ${artifact.dimensions}\n` : ''}
+${artifact.creditLine ? `\nCredit: ${artifact.creditLine}` : ''}
+      `.trim(),
+      type: 'artifact',
+      imageUrl: artifact.primaryImage || artifact.primaryImageSmall,
+      category: artifact.department,
+      sources: artifact.objectURL ? [artifact.objectURL] : []
+    });
+  };
+
+  const handlePlaceClick = (place: OverpassElement) => {
+    setSelectedEvent({
+      title: place.tags.name || place.tags['name:en'] || 'Historic Place',
+      content: `
+Historic Type: ${place.tags.historic}
+${place.tags.description ? `Description: ${place.tags.description}\n` : ''}
+${place.lat && place.lon ? `Coordinates: ${place.lat.toFixed(6)}, ${place.lon.toFixed(6)}\n` : ''}
+${place.tags.tourism === 'attraction' ? 'This location is marked as a tourist attraction.\n' : ''}
+${place.tags.website ? `Website: ${place.tags.website}` : ''}
+      `.trim(),
+      type: 'historic_place',
+      category: 'Historic Location',
+      sources: place.tags.website ? [place.tags.website] : []
+    });
   };
 
   return (
@@ -526,7 +582,19 @@ const Index = () => {
                     weather={currentWeather || currentData.weather}
                     location={apiData?.geoNames?.name || currentCity}
                   />
-                )}
+              )}
+
+              {/* Museum Artifacts */}
+              <MuseumSection 
+                artifacts={museumArtifacts}
+                onArtifactClick={handleArtifactClick}
+              />
+
+              {/* Historic Places */}
+              <HistoricPlacesSection 
+                places={historicPlaces}
+                onPlaceClick={handlePlaceClick}
+              />
               </div>
             </div>
           </div>

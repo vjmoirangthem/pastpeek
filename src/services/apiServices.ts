@@ -498,11 +498,204 @@ export async function fetchHistoricalWeather(lat: number, lng: number, year: num
       
       throw new Error('No valid weather data found');
     },
-    { lat: Math.round(lat * 100) / 100, lng: Math.round(lng * 100) / 100, year },
+    { lat, lng, year },
+    CACHE_TTL.LONG
+  ).catch(error => {
+    console.error('Error fetching historical weather:', error);
+    return null;
+  });
+}
+
+// Met Museum API Interfaces
+export interface MetMuseumObject {
+  objectID: number;
+  isHighlight: boolean;
+  title: string;
+  culture: string;
+  period: string;
+  dynasty: string;
+  reign: string;
+  portfolio: string;
+  artistDisplayName: string;
+  artistDisplayBio: string;
+  artistNationality: string;
+  objectDate: string;
+  objectBeginDate: number;
+  objectEndDate: number;
+  medium: string;
+  dimensions: string;
+  creditLine: string;
+  classification: string;
+  department: string;
+  objectName: string;
+  city: string;
+  state: string;
+  county: string;
+  country: string;
+  region: string;
+  subregion: string;
+  locale: string;
+  repository: string;
+  objectURL: string;
+  primaryImage: string;
+  primaryImageSmall: string;
+  additionalImages: string[];
+  constituents: Array<{
+    constituentID: number;
+    role: string;
+    name: string;
+    constituentULAN_URL: string;
+    constituentWikidata_URL: string;
+    gender: string;
+  }>;
+  isPublicDomain: boolean;
+  rightsAndReproduction: string;
+  linkResource: string;
+  metadataDate: string;
+  tags: any;
+  objectWikidata_URL: string;
+  isTimelineWork: boolean;
+  GalleryNumber: string;
+}
+
+export interface MetMuseumSearchResult {
+  total: number;
+  objectIDs: number[];
+}
+
+// Overpass API Interfaces
+export interface OverpassElement {
+  type: string;
+  id: number;
+  lat?: number;
+  lon?: number;
+  tags: {
+    [key: string]: string;
+  };
+}
+
+export interface OverpassResponse {
+  version: number;
+  generator: string;
+  osm3s: {
+    timestamp_osm_base: string;
+    timestamp_areas_base: string;
+    copyright: string;
+  };
+  elements: OverpassElement[];
+}
+
+// Met Museum API - Search for objects
+export async function fetchMetMuseumSearch(query: string): Promise<MetMuseumSearchResult | null> {
+  return cacheService.getOrFetch(
+    'met_search',
+    async () => {
+      const encodedQuery = encodeURIComponent(query);
+      const response = await fetch(
+        `https://collectionapi.metmuseum.org/public/collection/v1/search?q=${encodedQuery}`
+      );
+      
+      if (!response.ok) {
+        throw new Error(`Met Museum search error: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      return data;
+    },
+    { query },
     CACHE_TTL.VERY_LONG
   ).catch(error => {
-    console.error('Error fetching weather:', error);
+    console.error('Error fetching Met Museum search:', error);
     return null;
+  });
+}
+
+// Met Museum API - Get object details
+export async function fetchMetMuseumObject(objectID: number): Promise<MetMuseumObject | null> {
+  return cacheService.getOrFetch(
+    'met_object',
+    async () => {
+      const response = await fetch(
+        `https://collectionapi.metmuseum.org/public/collection/v1/objects/${objectID}`
+      );
+      
+      if (!response.ok) {
+        throw new Error(`Met Museum object error: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      return data;
+    },
+    { objectID },
+    CACHE_TTL.VERY_LONG
+  ).catch(error => {
+    console.error('Error fetching Met Museum object:', error);
+    return null;
+  });
+}
+
+// Met Museum API - Get multiple objects for a location
+export async function fetchMetMuseumArtifacts(city: string, limit: number = 10): Promise<MetMuseumObject[]> {
+  try {
+    const searchResult = await fetchMetMuseumSearch(city);
+    if (!searchResult || !searchResult.objectIDs || searchResult.objectIDs.length === 0) {
+      return [];
+    }
+
+    // Get details for first few objects
+    const objectPromises = searchResult.objectIDs
+      .slice(0, limit)
+      .map(id => fetchMetMuseumObject(id));
+
+    const objects = await Promise.all(objectPromises);
+    
+    // Filter out null results and return valid objects
+    return objects.filter((obj): obj is MetMuseumObject => obj !== null);
+  } catch (error) {
+    console.error('Error fetching Met Museum artifacts:', error);
+    return [];
+  }
+}
+
+// Overpass API - Get historic places in a city
+export async function fetchHistoricPlaces(cityName: string): Promise<OverpassElement[]> {
+  return cacheService.getOrFetch(
+    'historic_places',
+    async () => {
+      const query = `[out:json];area[name="${cityName}"]->.searchArea;(nwr["historic"](area.searchArea););out body;`;
+      const encodedQuery = encodeURIComponent(query);
+      
+      const response = await fetch(
+        `https://overpass-api.de/api/interpreter?data=${encodedQuery}`,
+        {
+          headers: {
+            'User-Agent': 'PastPeek-App/1.0'
+          }
+        }
+      );
+      
+      if (!response.ok) {
+        throw new Error(`Overpass API error: ${response.status}`);
+      }
+      
+      const data: OverpassResponse = await response.json();
+      
+      // Filter and process the results
+      return data.elements
+        .filter(element => 
+          element.tags && 
+          element.tags.name && 
+          element.tags.historic &&
+          element.lat && 
+          element.lon
+        )
+        .slice(0, 20); // Limit to 20 results
+    },
+    { cityName },
+    CACHE_TTL.VERY_LONG
+  ).catch(error => {
+    console.error('Error fetching historic places:', error);
+    return [];
   });
 }
 
