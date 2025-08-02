@@ -10,9 +10,6 @@ import { Modal } from '@/components/Modal';
 import { TTSFloater } from '@/components/TTSFloater';
 import { useToast } from '@/hooks/use-toast';
 import { fetchCityData, WikidataEvent, OpenverseImage, MetArtifact, fetchHistoricalWeather, fetchCurrentWeather, fetchGeocoding, fetchElevation } from '@/services/apiServices';
-import { BooksSection } from '@/components/BooksSection';
-import { MuseumSection } from '@/components/MuseumSection';
-import { HistoricPlacesSection } from '@/components/HistoricPlacesSection';
 import { EventCardSkeleton, LocationHeaderSkeleton, ImageGallerySkeleton, SidebarSkeleton } from '@/components/LoadingSkeleton';
 
 // Fallback data only used when API fails
@@ -532,33 +529,6 @@ const Index = () => {
                 )}
               </div>
             </div>
-          </div>
-          
-          {/* New Sections - Museum, Historic Places, Books */}
-          <div className="space-y-6 mt-8">
-            {/* Museum Section */}
-            {apiData?.metMuseumObjects && apiData.metMuseumObjects.length > 0 && (
-              <MuseumSection 
-                objects={apiData.metMuseumObjects} 
-                cityName={currentCity}
-              />
-            )}
-
-            {/* Historic Places Section */}
-            {apiData?.osmHistoricPlaces && apiData.osmHistoricPlaces.length > 0 && (
-              <HistoricPlacesSection 
-                places={apiData.osmHistoricPlaces} 
-                cityName={currentCity}
-              />
-            )}
-
-            {/* Books Section */}
-            {apiData?.gutenbergBooks && apiData.gutenbergBooks.length > 0 && (
-              <BooksSection 
-                books={apiData.gutenbergBooks} 
-                cityName={currentCity}
-              />
-            )}
           </div>
         </div>
       </main>

@@ -13,7 +13,9 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
     { icon: Database, label: 'Data Sources', href: '/sources' },
     { icon: Info, label: 'About Us', href: '/about' },
     { icon: HelpCircle, label: 'Help & Support', href: '/help' },
-    { icon: Mail, label: 'Contact', href: '/contact' }
+    { icon: Mail, label: 'Contact', href: '/contact' },
+    { icon: Settings, label: 'Settings', href: '/' },
+    { icon: Shield, label: 'Legal', href: '/' }
   ];
 
   return (
